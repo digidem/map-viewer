@@ -157,6 +157,9 @@ body {
   top: 0;
   left: 50%;
   transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding: 9px 18px;
   background: rgba(255, 255, 255, 0.82);
   backdrop-filter: blur(10px);
@@ -170,7 +173,9 @@ body {
   z-index: 5;
 }
 .va-brand-mark {
-  color: #1854f6;
+  width: 20px;
+  height: 20px;
+  display: block;
 }
 
 /* ── Top-right control column (attribution + help) ───────────────── */
@@ -206,7 +211,7 @@ body {
   color: #333;
 }
 .attrib-btn:hover {
-  background: rgba(0, 0, 0, 0.05);
+  background: #f2f2f2;
 }
 .attrib-btn-active {
   color: #1854f6;
@@ -377,7 +382,7 @@ body {
   color: #333;
 }
 .help-btn:hover {
-  background: rgba(0, 0, 0, 0.05);
+  background: #f2f2f2;
 }
 .help-btn-active {
   color: #1854f6;

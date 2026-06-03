@@ -81,11 +81,9 @@ export class AttributionButton extends LightElement {
         aria-label="Attribution"
         @click=${() => this.toggle()}
       >
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"
-          stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
-          <circle cx="8" cy="8" r="6.5" />
-          <path d="M8 7.5v3.5" />
-          <circle cx="8" cy="5.2" r=".55" fill="currentColor" stroke="none" />
+        <!-- Material Symbols "info" (filled). viewBox is Material's 960-grid. -->
+        <svg width="18" height="18" viewBox="0 -960 960 960" fill="currentColor">
+          <path d="M440-280h80v-240h-80v240Zm68.5-331.5Q520-623 520-640t-11.5-28.5Q497-680 480-680t-28.5 11.5Q440-657 440-640t11.5 28.5Q463-600 480-600t28.5-11.5ZM480-80q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Z" />
         </svg>
         <span
           class="attrib-dot"

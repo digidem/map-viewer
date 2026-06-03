@@ -56,6 +56,11 @@ export default defineConfig({
   },
   optimizeDeps: {
     exclude: ["mbtiles-reader", "@sqlite.org/sqlite-wasm"],
+    // mbtiles-reader is excluded (so sqlite-wasm keeps its real import.meta.url
+    // for locating sqlite3.wasm + the OPFS proxy), which also leaves its
+    // CommonJS sub-dep @mapbox/tiletype unconverted. Force it through dep
+    // optimization so the worker can load it as ESM in dev.
+    include: ["@mapbox/tiletype"],
   },
   plugins: [
     noCacheForServiceWorker,
@@ -66,6 +71,12 @@ export default defineConfig({
       injectRegister: false,
       injectManifest: {
         rollupFormat: "es",
+      },
+      devOptions: {
+        // Serve the SW under `npm run dev` so streaming SMP downloads work in
+        // development — they pipe through the service worker, not just in prod.
+        enabled: true,
+        type: "module",
       },
       manifest: {
         name: "MBTiles Viewer",

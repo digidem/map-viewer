@@ -97,11 +97,9 @@ export class HelpButton extends LightElement {
         aria-label="Help"
         @click=${() => this.toggle()}
       >
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"
-          stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
-          <circle cx="8" cy="8" r="6.5" />
-          <path d="M6.2 6.2c0-1 .8-1.8 1.8-1.8s1.8.8 1.8 1.8c0 .9-1.8 1.3-1.8 2.4" />
-          <circle cx="8" cy="11.2" r=".5" fill="currentColor" />
+        <!-- Material Symbols "help" (filled). viewBox is Material's 960-grid. -->
+        <svg width="18" height="18" viewBox="0 -960 960 960" fill="currentColor">
+          <path d="M513.5-254.5Q528-269 528-290t-14.5-35.5Q499-340 478-340t-35.5 14.5Q428-311 428-290t14.5 35.5Q457-240 478-240t35.5-14.5ZM442-394h74q0-33 7.5-52t42.5-52q26-26 41-49.5t15-56.5q0-56-41-86t-97-30q-57 0-92.5 30T342-618l66 26q5-18 22.5-39t53.5-21q32 0 48 17.5t16 38.5q0 20-12 37.5T506-526q-44 39-54 59t-10 73Zm38 314q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Z" />
         </svg>
       </button>
       ${this.open ? this.renderPopover() : nothing}

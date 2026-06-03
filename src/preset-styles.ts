@@ -2,7 +2,7 @@ import type { StyleSpecification } from "maplibre-gl";
 
 export type StyleKind = "vector" | "raster";
 export type StyleTone = "light" | "dark";
-export type StyleCategory = "street" | "satellite" | "terrain" | "activity";
+export type StyleCategory = "street" | "satellite" | "terrain";
 export type LicenseBucket = "open" | "attribution" | "restrictive";
 /** Tile y-axis convention for raster sources. `xyz` = y grows downward
  *  (Google/OSM); `tms` = y grows upward (OGC TMS). */
@@ -17,7 +17,6 @@ export const PRESET_CATEGORIES: StyleCategoryDef[] = [
   { id: "street", label: "Street" },
   { id: "satellite", label: "Satellite" },
   { id: "terrain", label: "Topographic" },
-  { id: "activity", label: "Activity" },
 ];
 
 export const LICENSE_LABELS: Record<LicenseBucket, string> = {
@@ -123,6 +122,11 @@ export interface PresetStyle {
   termsUrl?: string;
   /** Raster tile scheme. Defaults to "xyz" when unset. */
   scheme?: TileScheme;
+  /** Native max zoom of the underlying tile source — the deepest zoom at which
+   *  the source has real data, not server-side overzoomed tiles. Caps the
+   *  downloader's max-zoom slider and the generated style's source `maxzoom`,
+   *  so we never store upsampled tiles MapLibre would overzoom for free. */
+  maxZoom?: number;
   /** Values for a `{subdomain}` placeholder in the URL (e.g. Bing's t0–t3).
    *  Defaults to a/b/c when unset. */
   subdomains?: string[];
@@ -329,6 +333,8 @@ export const PRESET_STYLES: PresetStyle[] = [
     url: "https://tiles.openfreemap.org/styles/positron",
     restrictions: OFM_RESTRICTIONS,
     kind: "vector",
+    // OpenFreeMap planet vector tiles — TileJSON maxzoom 14.
+    maxZoom: 14,
     tone: "light",
     category: "street",
     attribution: OFM_ATTR,
@@ -344,6 +350,8 @@ export const PRESET_STYLES: PresetStyle[] = [
     url: "https://tiles.openfreemap.org/styles/liberty",
     restrictions: OFM_RESTRICTIONS,
     kind: "vector",
+    // OpenFreeMap planet vector tiles — TileJSON maxzoom 14.
+    maxZoom: 14,
     tone: "light",
     category: "street",
     attribution: OFM_ATTR,
@@ -358,6 +366,8 @@ export const PRESET_STYLES: PresetStyle[] = [
     url: "https://tiles.openfreemap.org/styles/bright",
     restrictions: OFM_RESTRICTIONS,
     kind: "vector",
+    // OpenFreeMap planet vector tiles — TileJSON maxzoom 14.
+    maxZoom: 14,
     tone: "light",
     category: "street",
     attribution: OFM_ATTR,
@@ -373,6 +383,8 @@ export const PRESET_STYLES: PresetStyle[] = [
     url: "https://tiles.openfreemap.org/styles/dark",
     restrictions: OFM_RESTRICTIONS,
     kind: "vector",
+    // OpenFreeMap planet vector tiles — TileJSON maxzoom 14.
+    maxZoom: 14,
     tone: "dark",
     category: "street",
     attribution: OFM_ATTR,
@@ -388,6 +400,8 @@ export const PRESET_STYLES: PresetStyle[] = [
     url: "https://tiles.openfreemap.org/styles/fiord",
     restrictions: OFM_RESTRICTIONS,
     kind: "vector",
+    // OpenFreeMap planet vector tiles — TileJSON maxzoom 14.
+    maxZoom: 14,
     tone: "dark",
     category: "street",
     attribution: OFM_ATTR,
@@ -402,6 +416,8 @@ export const PRESET_STYLES: PresetStyle[] = [
     id: "satellite",
     name: "Esri Satellite",
     desc: "Esri World Imagery. Raster, global coverage.",
+    // World Imagery has consistent global coverage to ~z19; z20+ is patchy.
+    maxZoom: 19,
     url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
     restrictions: ESRI_RESTRICTIONS,
     kind: "raster",
@@ -419,6 +435,7 @@ export const PRESET_STYLES: PresetStyle[] = [
     id: "esri-clarity",
     name: "Esri Clarity",
     desc: "Sharpened recent imagery emphasising structures.",
+    maxZoom: 19,
     url: "https://clarity.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
     restrictions: ESRI_RESTRICTIONS,
     kind: "raster",
@@ -434,6 +451,8 @@ export const PRESET_STYLES: PresetStyle[] = [
     id: "sentinel2",
     name: "Sentinel-2 Cloudless",
     desc: "Cloud-free composite from EOX. Global, recent.",
+    // Sentinel-2 is 10 m/px — native to z14. EOX serves z15-18 but overzoomed.
+    maxZoom: 14,
     // EOX serves the same data on two hosts. `s2maps-tiles.eu` is fronted by
     // Cloudflare with a 403 wall; `tiles.maps.eox.at` returns proper CORS.
     url: "https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2024_3857/default/g/{z}/{y}/{x}.jpg",
@@ -465,6 +484,8 @@ export const PRESET_STYLES: PresetStyle[] = [
     id: "nimbo",
     name: "NIMBO",
     desc: "Cloud-free Sentinel-2 mosaic, free for non-commercial use.",
+    // Sentinel-2 mosaic — 10 m/px, native to z14; higher tiles are overzoomed.
+    maxZoom: 14,
     // NIMBO's free MapCache layer is served as an OGC TMS (y-axis up).
     url: "https://prod-data.nimbo.earth/mapcache-free/tms/1.0.0/latest@kermap/{z}/{x}/{y}.png",
     restrictions: {
@@ -496,6 +517,8 @@ export const PRESET_STYLES: PresetStyle[] = [
     id: "glad-landsat",
     name: "GLAD Landsat",
     desc: "GLAD seasonal Landsat composites for vegetation analysis.",
+    // Landsat is 30 m/px — tiles stop at z12 (z13 returns 404).
+    maxZoom: 12,
     url: "https://storage.googleapis.com/earthenginepartners-hansen/tiles/gfc_v1.12/last_543/{z}/{x}/{y}.jpg",
     restrictions: {
       offline: {
@@ -525,6 +548,8 @@ export const PRESET_STYLES: PresetStyle[] = [
     id: "bing-satellite",
     name: "Bing Satellite",
     desc: "Microsoft Bing global aerial imagery. Subject to Microsoft's terms.",
+    // Bing Aerial has consistent global coverage to z19; z20+ is patchy.
+    maxZoom: 19,
     url: "https://ecn.{subdomain}.tiles.virtualearth.net/tiles/a{quadkey}.jpeg?g=1",
     restrictions: {
       offline: {
@@ -557,6 +582,8 @@ export const PRESET_STYLES: PresetStyle[] = [
     id: "esri-topo",
     name: "Esri Topographic",
     desc: "Esri World Topographic — contours, hillshade, labels.",
+    // Esri's cartography stops adding detail past z19; deeper tiles overzoom.
+    maxZoom: 19,
     url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}",
     restrictions: ESRI_RESTRICTIONS,
     kind: "raster",
@@ -574,6 +601,8 @@ export const PRESET_STYLES: PresetStyle[] = [
     id: "hillshade",
     name: "Hillshade",
     desc: "Greyscale relief-only. Ideal as a contour underlay.",
+    // Derived from a global ~10-30 m DEM — relief detail flattens out past z16.
+    maxZoom: 16,
     url: "https://services.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}",
     restrictions: ESRI_RESTRICTIONS,
     kind: "raster",
@@ -589,6 +618,8 @@ export const PRESET_STYLES: PresetStyle[] = [
     id: "esri-shaded-relief",
     name: "Esri Shaded Relief",
     desc: "Colour-graded shaded relief with elevation tinting.",
+    // Esri only caches this service to z13.
+    maxZoom: 13,
     url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Shaded_Relief/MapServer/tile/{z}/{y}/{x}",
     restrictions: ESRI_RESTRICTIONS,
     kind: "raster",
@@ -604,6 +635,8 @@ export const PRESET_STYLES: PresetStyle[] = [
     id: "esri-terrain-base",
     name: "Esri Terrain Base",
     desc: "Minimal terrain backdrop — bathymetry + landcover only.",
+    // Esri only caches this service to z13.
+    maxZoom: 13,
     url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Terrain_Base/MapServer/tile/{z}/{y}/{x}",
     restrictions: ESRI_RESTRICTIONS,
     kind: "raster",
@@ -622,6 +655,8 @@ export const PRESET_STYLES: PresetStyle[] = [
     id: "esri-natgeo",
     name: "Esri National Geographic",
     desc: "National Geographic World Map — cartographic, illustrative.",
+    // Esri only caches this service to z16.
+    maxZoom: 16,
     url: "https://services.arcgisonline.com/ArcGIS/rest/services/NatGeo_World_Map/MapServer/tile/{z}/{y}/{x}",
     restrictions: ESRI_RESTRICTIONS,
     kind: "raster",
@@ -756,11 +791,14 @@ export function expandSubdomainTiles(
 /** Build a basic raster maplibre style for a tile URL template (z/x/y or
  *  quadkey). When the template contains `{subdomain}`/`{s}`, expand into one
  *  URL per subdomain so MapLibre can round-robin. The `scheme` controls the
- *  y-axis convention (xyz vs OGC tms). */
+ *  y-axis convention (xyz vs OGC tms). `maxZoom`, when known, is set as the
+ *  source `maxzoom` so MapLibre overzooms past it instead of requesting
+ *  upsampled tiles — and so the SMP downloader stops fetching at that zoom. */
 export function rasterStyleForTileUrl(
   tileUrl: string,
   subdomains?: string[],
   scheme: TileScheme = "xyz",
+  maxZoom?: number,
 ): StyleSpecification {
   return {
     version: 8,
@@ -770,6 +808,7 @@ export function rasterStyleForTileUrl(
         tiles: expandSubdomainTiles(tileUrl, subdomains),
         tileSize: 256,
         scheme,
+        ...(maxZoom != null ? { maxzoom: maxZoom } : {}),
       },
     },
     layers: [
@@ -834,6 +873,7 @@ export function buildMapStyle(style: AppStyle): string | StyleSpecification {
       style.url,
       "subdomains" in style ? style.subdomains : undefined,
       "scheme" in style ? style.scheme : undefined,
+      "maxZoom" in style ? style.maxZoom : undefined,
     );
   }
   return style.url;

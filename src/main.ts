@@ -56,8 +56,16 @@ import {
 //   - poll registration.update() periodically for tabs left open all day
 //   - listen for `controllerchange` and reload exactly once after the new
 //     SW takes over (in response to our SKIP_WAITING message)
-if ("serviceWorker" in navigator && !import.meta.env.DEV) {
-  registerServiceWorker();
+if ("serviceWorker" in navigator) {
+  if (import.meta.env.DEV) {
+    // Streaming downloads need a SW in dev too; vite-plugin-pwa serves it here
+    // (devOptions.enabled). Skip the prod-only update machinery below.
+    navigator.serviceWorker
+      .register("/dev-sw.js?dev-sw", { type: "module" })
+      .catch((err) => console.warn("Dev SW registration failed", err));
+  } else {
+    registerServiceWorker();
+  }
 }
 
 async function registerServiceWorker() {
@@ -232,7 +240,7 @@ const bboxMap = new BboxMap({
 const brand = document.createElement("div");
 brand.className = "va-brand";
 brand.innerHTML =
-  '<span class="va-brand-mark">◆</span> Map Downloader';
+  '<img class="va-brand-mark" src="/logo.svg" alt="" /> Map Downloader';
 overlayHost.appendChild(brand);
 
 // Top-right controls: attribution "i" stacked above Help in a vertical column.
@@ -553,11 +561,13 @@ function startDownload(
           message.styleSpec = inlineSpec;
         } else if (isTileUrlTemplate(style.url)) {
           // Tile URL template — wrap into a basic raster style, carrying the
-          // source's subdomains + tile scheme (xyz/tms) to the downloader.
+          // source's subdomains, tile scheme (xyz/tms) and native max zoom to
+          // the downloader so it never fetches overzoomed tiles.
           message.styleSpec = rasterStyleForTileUrl(
             style.url,
             "subdomains" in style ? style.subdomains : undefined,
             "scheme" in style ? style.scheme : undefined,
+            "maxZoom" in style ? style.maxZoom : undefined,
           );
         } else {
           message.styleUrl = style.url;

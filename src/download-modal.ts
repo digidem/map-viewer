@@ -634,11 +634,12 @@ export class DownloadModal extends LightElement {
     `;
   }
 
-  /** Usage-restrictions banner — shown only for attribution/restrictive
-   *  styles. The required checkbox gates the primary download button. */
+  /** Usage-restrictions banner — always shown so the user sees how the basemap
+   *  may be used. Attribution/restrictive styles additionally get the required
+   *  acknowledgement checkbox, which gates the primary download button. */
   private buildLicenceBanner(): TemplateResult | typeof nothing {
     const style = this.currentStyle;
-    if (!style || !this.needsAck) return nothing;
+    if (!style) return nothing;
     return html`
       <div class="dm-licence">
         <div class="dm-licence-title">Usage restrictions</div>
@@ -647,19 +648,25 @@ export class DownloadModal extends LightElement {
           responsible for complying with its terms.
         </div>
         ${this.buildUsageList(style)}
-        <label class="dm-licence-check">
-          <input
-            type="checkbox"
-            class="dm-licence-checkbox"
-            .checked=${this.acknowledged}
-            @change=${(e: Event) =>
-              (this.acknowledged = (e.target as HTMLInputElement).checked)}
-          />
-          <span>
-            I'll comply with ${this.renderTermsLink(style)} when storing &
-            redistributing the downloaded tiles.
-          </span>
-        </label>
+        ${this.needsAck
+          ? html`
+              <label class="dm-licence-check">
+                <input
+                  type="checkbox"
+                  class="dm-licence-checkbox"
+                  .checked=${this.acknowledged}
+                  @change=${(e: Event) =>
+                    (this.acknowledged = (
+                      e.target as HTMLInputElement
+                    ).checked)}
+                />
+                <span>
+                  I'll comply with ${this.renderTermsLink(style)} when storing &
+                  redistributing the downloaded tiles.
+                </span>
+              </label>
+            `
+          : nothing}
       </div>
     `;
   }

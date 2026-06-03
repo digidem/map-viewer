@@ -217,37 +217,6 @@ export const QMS_CATALOGUE: QmsCatalogueEntry[] = [
     termsUrl: "https://nextgis.com/",
     popularity: 30,
   },
-
-  // ── Activity ──────────────────────────────────────────────────────────
-  {
-    qmsId: 1013,
-    name: "Waymarked Trails: Hiking",
-    desc: "Marked hiking-route network from Waymarked Trails.",
-    url: "https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png",
-    tone: "light",
-    category: "activity",
-    attribution:
-      '© <a href="https://hiking.waymarkedtrails.org">waymarkedtrails.org</a> · ' +
-      OSM_ATTR +
-      " (CC-BY-SA)",
-    license: "attribution",
-    termsUrl: "https://www.waymarkedtrails.org/",
-    popularity: 47,
-  },
-  {
-    qmsId: 8418,
-    name: "OpenRailwayMap",
-    desc: "Railway infrastructure overlay from OSM data.",
-    url: "https://tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png",
-    tone: "light",
-    category: "activity",
-    attribution:
-      OSM_ATTR +
-      ' · Style: <a href="https://www.openrailwaymap.org">OpenRailwayMap</a> (CC-BY-SA)',
-    license: "attribution",
-    termsUrl: "https://www.openrailwaymap.org/",
-    popularity: 25,
-  },
 ];
 
 /** Translate a QMS catalogue entry into an in-app style. */

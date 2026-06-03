@@ -54,10 +54,12 @@ type BrowseEntry =
   | { source: "preset"; preset: PresetStyle }
   | { source: "qms"; qms: QmsCatalogueEntry };
 
+/** Filter chips: `curated` is exclusive (clears the rest); `category` and
+ *  `kind` are each single-select but combine as an AND of the two. */
 interface FilterState {
   curated: boolean;
-  categories: Set<StyleCategory>;
-  kinds: Set<StyleKind>;
+  category: StyleCategory | null;
+  kind: StyleKind | null;
 }
 
 export interface StylePickerOptions {
@@ -147,8 +149,6 @@ const FALLBACK_BG: Record<string, string> = {
   "satellite-dark": "#1a3b5c",
   "terrain-light": "#cdb98c",
   "terrain-dark": "#26331f",
-  "activity-light": "#f1ede2",
-  "activity-dark": "#2a2433",
 };
 function fallbackBg(category: StyleCategory, tone: string): string {
   return FALLBACK_BG[`${category}-${tone}`] ?? "#ccc";
@@ -163,15 +163,6 @@ const STAR_SVG = html`<svg
 >
   <path d="M6 1l1.5 3.2 3.5.4-2.6 2.4.7 3.4L6 8.7 2.9 10.4l.7-3.4L1 4.6l3.5-.4L6 1z" />
 </svg>`;
-
-/** Immutable Set toggle — Lit change detection is identity-based, so the whole
- *  `filter` object must be replaced for a re-render. */
-function toggledSet<T>(set: Set<T>, value: T): Set<T> {
-  const next = new Set(set);
-  if (next.has(value)) next.delete(value);
-  else next.add(value);
-  return next;
-}
 
 /** A Browse entry is "curated" when it's a preset in the curated id set. */
 function isCuratedEntry(e: BrowseEntry): boolean {
@@ -233,7 +224,7 @@ export class StylePicker extends LightElement {
     this.isOpen = false;
     this.previewCenter = [0, 51.5];
     this.recents = [];
-    this.filter = { curated: true, categories: new Set(), kinds: new Set() };
+    this.filter = { curated: true, category: null, kind: null };
     this.dropHot = false;
     // Backdrop click-to-close — desktop only, and only on the host itself.
     this.addEventListener("click", (e) => {
@@ -352,14 +343,12 @@ export class StylePicker extends LightElement {
   }
 
   /** Does an entry pass the active filter? Curated is exclusive — when it's on
-   *  only the curated set shows, and the category/kind chips are cleared. */
+   *  only the curated set shows. Otherwise category and kind combine as an AND. */
   private passes(e: BrowseEntry) {
     const f = this.filter;
     if (f.curated) return isCuratedEntry(e);
-    if (f.categories.size && !f.categories.has(this.entryCategory(e))) {
-      return false;
-    }
-    if (f.kinds.size && !f.kinds.has(this.entryKind(e))) return false;
+    if (f.category && f.category !== this.entryCategory(e)) return false;
+    if (f.kind && f.kind !== this.entryKind(e)) return false;
     return true;
   }
 
@@ -422,48 +411,48 @@ export class StylePicker extends LightElement {
       toggle: () => void;
     }
     const all = this.allEntries();
+    const f = this.filter;
     const chips: ChipDef[] = [];
     chips.push({
       label: "All",
       // Auto-active whenever no other chip is selected.
-      active:
-        !this.filter.curated &&
-        this.filter.categories.size === 0 &&
-        this.filter.kinds.size === 0,
+      active: !f.curated && f.category === null && f.kind === null,
       count: all.length,
       toggle: () => {
-        this.filter = {
-          curated: false,
-          categories: new Set(),
-          kinds: new Set(),
-        };
+        this.filter = { curated: false, category: null, kind: null };
       },
     });
     chips.push({
       label: "Curated",
       star: true,
-      active: this.filter.curated,
+      active: f.curated,
       count: all.filter(isCuratedEntry).length,
       toggle: () => {
         // Curated is exclusive — turning it on clears the other chips;
         // turning it off leaves the gallery unfiltered.
-        this.filter = this.filter.curated
-          ? { ...this.filter, curated: false }
-          : { curated: true, categories: new Set(), kinds: new Set() };
+        this.filter = f.curated
+          ? { ...f, curated: false }
+          : { curated: true, category: null, kind: null };
       },
     });
     for (const cat of PRESET_CATEGORIES) {
       chips.push({
         label: cat.label,
-        active: this.filter.categories.has(cat.id),
-        // Count of every item in the category — Curated is not an "and" filter.
-        count: all.filter((e) => this.entryCategory(e) === cat.id).length,
+        active: f.category === cat.id,
+        // AND'd with the selected kind — the count is what picking this chip
+        // would actually show.
+        count: all.filter(
+          (e) =>
+            this.entryCategory(e) === cat.id &&
+            (f.kind === null || this.entryKind(e) === f.kind),
+        ).length,
         toggle: () => {
-          // Selecting any category chip turns Curated off.
+          // Category is single-select; selecting one turns Curated off but
+          // keeps any selected kind.
           this.filter = {
             curated: false,
-            categories: toggledSet(this.filter.categories, cat.id),
-            kinds: this.filter.kinds,
+            category: f.category === cat.id ? null : cat.id,
+            kind: f.kind,
           };
         },
       });
@@ -471,13 +460,17 @@ export class StylePicker extends LightElement {
     for (const kind of ["vector", "raster"] as StyleKind[]) {
       chips.push({
         label: kind === "vector" ? "Vector" : "Raster",
-        active: this.filter.kinds.has(kind),
-        count: all.filter((e) => this.entryKind(e) === kind).length,
+        active: f.kind === kind,
+        count: all.filter(
+          (e) =>
+            this.entryKind(e) === kind &&
+            (f.category === null || this.entryCategory(e) === f.category),
+        ).length,
         toggle: () => {
           this.filter = {
             curated: false,
-            categories: this.filter.categories,
-            kinds: toggledSet(this.filter.kinds, kind),
+            category: f.category,
+            kind: f.kind === kind ? null : kind,
           };
         },
       });
