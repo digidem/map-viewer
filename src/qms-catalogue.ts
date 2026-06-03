@@ -159,7 +159,9 @@ export const QMS_CATALOGUE: QmsCatalogueEntry[] = [
     qmsId: 678,
     name: "Google Satellite",
     desc: "Google's global satellite imagery. Subject to Google's terms.",
-    url: "https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
+    // scale=2 serves genuinely higher-res (retina) imagery, not an upscale —
+    // verified ~12x the high-freq detail of a bicubic upscale. ~4x the bytes.
+    url: "https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}&scale=2",
     tone: "dark",
     category: "satellite",
     attribution: 'Imagery © <a href="https://www.google.com/maps">Google</a>',
@@ -171,7 +173,9 @@ export const QMS_CATALOGUE: QmsCatalogueEntry[] = [
     qmsId: 1135,
     name: "Google Satellite Hybrid",
     desc: "Google satellite imagery with road & label overlay.",
-    url: "https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}",
+    // scale=2 serves genuinely higher-res (retina) imagery plus 2x-rendered
+    // labels — both crisp on retina, not an upscale. ~4x the tile bytes.
+    url: "https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}&scale=2",
     tone: "dark",
     category: "satellite",
     attribution: 'Imagery © <a href="https://www.google.com/maps">Google</a>',

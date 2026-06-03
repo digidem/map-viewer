@@ -279,6 +279,21 @@ const ESRI_RESTRICTIONS: UsageRestrictions = {
   },
 };
 
+const BING_RESTRICTIONS: UsageRestrictions = {
+  offline: {
+    verdict: "prohibited",
+    note: "Microsoft's terms forbid copying, storing or archiving Bing Maps content.",
+  },
+  commercial: {
+    verdict: "conditional",
+    note: "Commercial use needs a paid Bing Maps agreement; the free tier is capped and non-production.",
+  },
+  redistribution: {
+    verdict: "prohibited",
+    note: "Redistributing, reselling or sublicensing Bing Maps content is forbidden.",
+  },
+};
+
 /** Hand-picked "Curated" set — the styles shown when the Curated chip is on.
  *  Trim or extend this list to change the curated gallery. */
 export const CURATED_PRESET_IDS = new Set<string>([
@@ -551,20 +566,7 @@ export const PRESET_STYLES: PresetStyle[] = [
     // Bing Aerial has consistent global coverage to z19; z20+ is patchy.
     maxZoom: 19,
     url: "https://ecn.{subdomain}.tiles.virtualearth.net/tiles/a{quadkey}.jpeg?g=1",
-    restrictions: {
-      offline: {
-        verdict: "prohibited",
-        note: "Microsoft's terms forbid copying, storing or archiving Bing Maps content.",
-      },
-      commercial: {
-        verdict: "conditional",
-        note: "Commercial use needs a paid Bing Maps agreement; the free tier is capped and non-production.",
-      },
-      redistribution: {
-        verdict: "prohibited",
-        note: "Redistributing, reselling or sublicensing Bing Maps content is forbidden.",
-      },
-    },
+    restrictions: BING_RESTRICTIONS,
     kind: "raster",
     tone: "dark",
     category: "satellite",
@@ -575,6 +577,26 @@ export const PRESET_STYLES: PresetStyle[] = [
     termsUrl: "https://www.microsoft.com/maps/product/terms.html",
     previewTileUrl:
       "https://ecn.{subdomain}.tiles.virtualearth.net/tiles/a{quadkey}.jpeg?g=1",
+  },
+  {
+    id: "bing-hybrid",
+    name: "Bing Satellite Hybrid",
+    desc: "Bing aerial imagery with road & label overlay. Subject to Microsoft's terms.",
+    // Bing Aerial has consistent global coverage to z19; z20+ is patchy.
+    maxZoom: 19,
+    // `h` = hybrid (aerial + labels); `a` is aerial-only, `r` road-only.
+    url: "https://ecn.{subdomain}.tiles.virtualearth.net/tiles/h{quadkey}.jpeg?g=1",
+    restrictions: BING_RESTRICTIONS,
+    kind: "raster",
+    tone: "dark",
+    category: "satellite",
+    subdomains: ["t0", "t1", "t2", "t3"],
+    attribution:
+      'Imagery © <a href="https://www.microsoft.com/maps">Microsoft</a> · Earthstar Geographics SIO',
+    license: "restrictive",
+    termsUrl: "https://www.microsoft.com/maps/product/terms.html",
+    previewTileUrl:
+      "https://ecn.{subdomain}.tiles.virtualearth.net/tiles/h{quadkey}.jpeg?g=1",
   },
 
   // ── Topographic ─────────────────────────────────────────────────────────
