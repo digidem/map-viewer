@@ -205,6 +205,8 @@ export interface QmsStyle {
   restrictions?: UsageRestrictions;
   termsUrl?: string;
   scheme?: TileScheme;
+  /** Values for a `{subdomain}` placeholder in the URL (e.g. Google's mt0–mt3). */
+  subdomains?: string[];
 }
 
 export type AppStyle = PresetStyle | CustomStyle | MbtilesStyle | QmsStyle;

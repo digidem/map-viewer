@@ -27,6 +27,9 @@ export interface QmsCatalogueEntry {
   desc: string;
   /** Raster {z}/{x}/{y} tile URL template. */
   url: string;
+  /** Values for a `{subdomain}` placeholder in the URL (e.g. Google's mt0–mt3).
+   *  Defaults to a/b/c when unset. */
+  subdomains?: string[];
   tone: StyleTone;
   category: StyleCategory;
   /** Attribution HTML for the popover + download licence banner. */
@@ -47,6 +50,9 @@ const ESRI_ATTR =
   'Tiles © <a href="https://www.esri.com">Esri</a> — sourced from Esri and its data partners';
 const GOOGLE_ATTR =
   'Map data © <a href="https://www.google.com/maps">Google</a>';
+// Google serves identical tiles from mt0–mt3; rotate to spread bulk-download
+// load and avoid per-host throttling.
+const GOOGLE_SUBDOMAINS = ["mt0", "mt1", "mt2", "mt3"];
 
 const OSM_TERMS = "https://operations.osmfoundation.org/policies/tiles/";
 const CARTO_TERMS = "https://carto.com/legal/";
@@ -145,7 +151,8 @@ export const QMS_CATALOGUE: QmsCatalogueEntry[] = [
     qmsId: 1136,
     name: "Google Maps",
     desc: "Google's standard road map. Subject to Google's terms.",
-    url: "https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}",
+    url: "https://{subdomain}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}",
+    subdomains: GOOGLE_SUBDOMAINS,
     tone: "light",
     category: "street",
     attribution: GOOGLE_ATTR,
@@ -161,7 +168,8 @@ export const QMS_CATALOGUE: QmsCatalogueEntry[] = [
     desc: "Google's global satellite imagery. Subject to Google's terms.",
     // scale=2 serves genuinely higher-res (retina) imagery, not an upscale —
     // verified ~12x the high-freq detail of a bicubic upscale. ~4x the bytes.
-    url: "https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}&scale=2",
+    url: "https://{subdomain}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}&scale=2",
+    subdomains: GOOGLE_SUBDOMAINS,
     tone: "dark",
     category: "satellite",
     attribution: 'Imagery © <a href="https://www.google.com/maps">Google</a>',
@@ -175,7 +183,8 @@ export const QMS_CATALOGUE: QmsCatalogueEntry[] = [
     desc: "Google satellite imagery with road & label overlay.",
     // scale=2 serves genuinely higher-res (retina) imagery plus 2x-rendered
     // labels — both crisp on retina, not an upscale. ~4x the tile bytes.
-    url: "https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}&scale=2",
+    url: "https://{subdomain}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}&scale=2",
+    subdomains: GOOGLE_SUBDOMAINS,
     tone: "dark",
     category: "satellite",
     attribution: 'Imagery © <a href="https://www.google.com/maps">Google</a>',
@@ -201,7 +210,8 @@ export const QMS_CATALOGUE: QmsCatalogueEntry[] = [
     qmsId: 1140,
     name: "Google Terrain",
     desc: "Google's terrain map with relief shading.",
-    url: "https://mt1.google.com/vt/lyrs=t&x={x}&y={y}&z={z}",
+    url: "https://{subdomain}.google.com/vt/lyrs=t&x={x}&y={y}&z={z}",
+    subdomains: GOOGLE_SUBDOMAINS,
     tone: "light",
     category: "terrain",
     attribution: GOOGLE_ATTR,
@@ -231,6 +241,7 @@ export function qmsToStyle(entry: QmsCatalogueEntry): QmsStyle {
     name: entry.name,
     desc: entry.desc,
     url: entry.url,
+    subdomains: entry.subdomains,
     kind: "raster",
     tone: entry.tone,
     category: entry.category,

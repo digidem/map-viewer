@@ -512,7 +512,7 @@ export class StylePicker extends LightElement {
     const license = isPreset ? e.preset.license : e.qms.license;
     const tileUrl = isPreset ? e.preset.previewTileUrl : e.qms.url;
     const scheme = isPreset ? e.preset.scheme : undefined;
-    const previewSubdomains = isPreset ? e.preset.subdomains : undefined;
+    const previewSubdomains = isPreset ? e.preset.subdomains : e.qms.subdomains;
     const pz = (isPreset && e.preset.previewZoom) || PREVIEW_ZOOM;
     const [lng, lat] = this.previewCenter;
     const { x, y } = lngLatToTile(lng, lat, pz);
