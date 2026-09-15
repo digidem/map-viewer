@@ -383,10 +383,23 @@ async function startSmpDownload(fileName: string) {
     "content-type": "application/octet-stream",
   };
 
+  // If the iframe navigates before the SW has stored the stream (e.g. while the
+  // SW is restarting), the fetch misses it and the download silently never starts
+  const swReady = new MessageChannel();
+  const swAcked = new Promise((resolve) => {
+    swReady.port1.onmessage = resolve;
+  });
   sw.active.postMessage(
-    { url: sw.scope + encodedName, headers, readablePort: channel.port1 },
-    [channel.port1],
+    {
+      url: sw.scope + encodedName,
+      headers,
+      readablePort: channel.port1,
+      ackPort: swReady.port2,
+    },
+    [channel.port1, swReady.port2],
   );
+  await swAcked;
+  swReady.port1.close();
 
   worker.postMessage(
     { type: "generateSmp", port: channel.port2 },

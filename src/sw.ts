@@ -68,6 +68,7 @@ self.addEventListener("message", (evt) => {
       new CountQueuingStrategy({ highWaterMark: 4 }),
     );
     pending.set(data.url, { rs, headers: data.headers });
+    data.ackPort?.postMessage(null);
   }
 });
 
