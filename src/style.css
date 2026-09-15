@@ -1,13 +1,250 @@
 @import "tailwindcss";
 
+/* Visual language shared with map-downloader (src/style.css there). */
+
+/* ── Shell ───────────────────────────────────────────────────────── */
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100vh;
+  overflow: hidden;
+  overscroll-behavior: none;
+  background: #1a1d24;
+}
+body {
+  font-family: "Hanken Grotesk", system-ui, -apple-system, sans-serif;
+  color: #29261b;
+}
+#app {
+  position: fixed;
+  inset: 0;
+  background: #1a1d24;
+}
+
+/* Unlayered, so it beats the display rules below (Tailwind's own `hidden` is in a layer) */
+.hidden {
+  display: none !important;
+}
+
+/* ID selector so it outranks maplibre-gl.css's `.maplibregl-map { position: relative }` */
+#map {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+}
+
+/* ── Brand chip ──────────────────────────────────────────────────── */
+.va-brand {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 18px;
+  padding-top: calc(9px + env(safe-area-inset-top));
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(120, 120, 120, 0.35);
+  border-top: none;
+  border-radius: 0 0 6px 6px;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.1px;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  z-index: 20;
+  pointer-events: none;
+}
+.va-brand-mark {
+  width: 20px;
+  height: 20px;
+  display: block;
+}
+
+/* ── Landing card ────────────────────────────────────────────────── */
+.mv-landing {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 72px 16px 96px;
+}
+.mv-card {
+  width: 100%;
+  max-width: 420px;
+  background: #fff;
+  border-radius: 14px;
+  padding: 24px;
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.1),
+    0 16px 40px rgba(0, 0, 0, 0.18);
+}
+.mv-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0;
+}
+.mv-sub {
+  font-size: 14px;
+  line-height: 1.45;
+  color: #555;
+  margin: 6px 0 18px;
+}
+.mv-drop {
+  border: 2px dashed #ccc;
+  border-radius: 12px;
+  padding: 28px 20px;
+  text-align: center;
+  background: #fafafa;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+.mv-primary {
+  width: 100%;
+  padding: 14px 20px;
+  border: none;
+  background: #1854f6;
+  color: #fff;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(24, 84, 246, 0.3);
+}
+.mv-primary:hover {
+  background: #1447d6;
+}
+.mv-primary:disabled {
+  background: #ccc;
+  box-shadow: none;
+  cursor: not-allowed;
+}
+.mv-spinner {
+  height: 49px;
+  display: flex;
+  align-items: center;
+  color: #1854f6;
+}
+.mv-spin {
+  width: 28px;
+  height: 28px;
+  animation: mv-spin 0.9s linear infinite;
+}
+@keyframes mv-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.mv-drop-hint {
+  font-size: 14px;
+  font-weight: 600;
+  color: #444;
+  margin: 0;
+}
+.mv-drop-formats {
+  font-size: 13px;
+  color: #888;
+  margin: 0;
+}
+.mv-error {
+  margin: 14px 0 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #a02020;
+  background: #fce8e8;
+}
+
+/* Touch devices can't drag files in */
 @media (pointer: coarse) {
-  #drop-hint {
+  .mv-drop-hint {
     display: none !important;
   }
 }
 
+/* ── Install guidance ────────────────────────────────────────────── */
+.mv-install {
+  position: absolute;
+  left: 50%;
+  bottom: calc(20px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  max-width: calc(100% - 32px);
+  text-align: center;
+  font-size: 13px;
+  color: #e2dfd7;
+}
+.mv-install-btn {
+  padding: 10px 18px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+}
+.mv-install-btn:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+.mv-inline-icon {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  vertical-align: text-bottom;
+}
 @media (display-mode: standalone) {
-  #install-guide {
+  .mv-install {
     display: none !important;
   }
+}
+
+/* ── Map controls ────────────────────────────────────────────────── */
+.maplibregl-ctrl-top-left,
+.maplibregl-ctrl-top-right {
+  padding-top: env(safe-area-inset-top);
+}
+.maplibregl-ctrl-group button {
+  color: #333;
+}
+.maplibregl-ctrl-group button:hover {
+  color: #1854f6;
+}
+
+/* ── Drop overlay ────────────────────────────────────────────────── */
+.drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(238, 242, 255, 0.85);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  transition: opacity 0.15s;
+}
+.drop-overlay-icon {
+  width: 64px;
+  height: 64px;
+  color: #1854f6;
+  margin-bottom: 16px;
+}
+.drop-overlay-title {
+  font-size: 24px;
+  font-weight: 600;
+  color: #1854f6;
+}
+.drop-overlay-sub {
+  font-size: 14px;
+  color: #555;
+  margin-top: 4px;
 }

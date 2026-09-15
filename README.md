@@ -1,68 +1,72 @@
-# MBTiles Viewer
+# Map Viewer
 
-MBTiles Viewer is an offline-first web app for viewing
-[MBTiles files](https://github.com/mapbox/mbtiles-spec). The MBTiles file is
-copied to
-[OPFS](https://developer.mozilla.org/en-US/docs/Web/API/File_System_API/Origin_private_file_system)
-and queried with [sqlite-wasm](https://github.com/sqlite/sqlite-wasm). Vector
-tiles are rendered with random colours, borrowing ideas from
-[mbview](https://github.com/mapbox/mbview). The app is written in vanilla
-javascript and built with [vite](https://vite.dev). The website can be installed
-as a PWA on desktop and mobile and works offline.
-
-## SMP Export
-
-Once a map is loaded, click the download button (arrow icon, top-right) to
-export the MBTiles file as a
+Map Viewer is an offline-first web app for viewing
+[MBTiles](https://github.com/mapbox/mbtiles-spec) and
 [Styled Map Package](https://github.com/digidem/styled-map-package) (.smp)
-file. The SMP is generated in a web worker using
-[styled-map-package-api](https://github.com/digidem/styled-map-package) and
-streamed as a download via a service worker, so even large files don't need to
-be held entirely in memory.
+files. Open a file with the button or drag and drop it onto the page. Files are
+never uploaded: everything happens in your browser, and the site can be
+installed as a PWA on desktop and mobile so it keeps working offline.
+
+It is a companion to [Map Downloader](https://map-downloader.comapeo.app), which
+creates SMP files for [CoMapeo](https://comapeo.app).
+
+## Supported files
+
+**MBTiles** (`.mbtiles`, `.sqlite`, `.db`) are copied to
+[OPFS](https://developer.mozilla.org/en-US/docs/Web/API/File_System_API/Origin_private_file_system)
+and queried with [sqlite-wasm](https://github.com/sqlite/sqlite-wasm). Raster
+tilesets are shown as-is; vector tiles are rendered with random colours,
+borrowing ideas from [mbview](https://github.com/mapbox/mbview).
+
+**Styled Map Packages** (`.smp`) are read directly from the file with
+[styled-map-package-api](https://github.com/digidem/styled-map-package), so
+there is no copy step. The package's own style, glyphs and sprites are used, and
+the area the package covers is outlined on the map.
+
+## Export to SMP
+
+Once an MBTiles file is loaded, click the download button (arrow icon, top
+right) to export it as a Styled Map Package. The SMP is generated in a web
+worker and streamed as a download via a service worker, so even large files
+don't need to be held entirely in memory.
 
 ## Caveats
 
-The MBTiles file is copied into
-[OPFS](https://developer.mozilla.org/en-US/docs/Web/API/File_System_API/Origin_private_file_system)
-so that it can be queried by sqlite-wasm. This copy should be removed when you
-leave the web page, or you re-open the page/app. Browsers do not currently
-provide a way to browse files in OPFS.
+MBTiles files are copied into OPFS so that sqlite-wasm can query them. This copy
+is removed when you leave the page, or the next time you open the page or app.
+Browsers do not currently provide a way to browse files in OPFS.
 
 ## Development
 
-To install the dependencies, run:
-
 ```bash
 npm install
+npm run dev
 ```
 
-To start the application, run:
+The e2e tests use Playwright (Chromium and Firefox) driven from Vitest:
 
 ```bash
-npm run dev
+npm run test:e2e:install
+npm test
+```
+
+PWA icons are generated from `public/logo.svg`:
+
+```bash
+npm run generate-pwa-assets
 ```
 
 ## Deployment
 
-To build the app for deployment, run:
-
 ```bash
 npm run build
+npm run preview # preview locally
 ```
 
-To preview locally, run:
-
-```bash
-npm run preview
-```
-
-Upload the contents of the `dist` directory to your web server.
-
-## Contributing
-
-Contributions are welcome! Please open an issue or submit a pull request.
+The contents of `dist` can be served by any host that applies the headers in
+`public/_headers` (cross-origin isolation is required for OPFS and
+sqlite-wasm).
 
 ## License
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file
-for details.
+MIT

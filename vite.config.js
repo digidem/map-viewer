@@ -31,12 +31,16 @@ export default defineConfig({
       injectRegister: false,
       injectManifest: {
         rollupFormat: "es",
+        globPatterns: ["**/*.{js,css,html,wasm,woff2,png,svg,ico}"],
       },
       manifest: {
-        name: "MBTiles Viewer",
-        short_name: "MBTiles",
-        theme_color: "#eef2ff",
-        background_color: "#eef2ff",
+        name: "Map Viewer",
+        short_name: "Map Viewer",
+        description:
+          "View MBTiles and Styled Map Package (.smp) files in your browser, offline.",
+        theme_color: "#1a1d24",
+        background_color: "#1a1d24",
+        display: "standalone",
         icons: [
           {
             src: "pwa-64x64.png",
