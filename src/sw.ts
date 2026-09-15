@@ -20,8 +20,8 @@ const PULL = 0;
 const ERROR = 1;
 const CLOSE = 2;
 
-class MessagePortSource implements UnderlyingSource<Uint8Array> {
-  controller!: ReadableStreamController<Uint8Array>;
+class MessagePortSource implements UnderlyingDefaultSource<Uint8Array> {
+  controller!: ReadableStreamDefaultController<Uint8Array>;
   port: MessagePort;
 
   constructor(port: MessagePort) {
@@ -29,7 +29,7 @@ class MessagePortSource implements UnderlyingSource<Uint8Array> {
     this.port.onmessage = (evt) => this.onMessage(evt.data);
   }
 
-  start(controller: ReadableStreamController<Uint8Array>) {
+  start(controller: ReadableStreamDefaultController<Uint8Array>) {
     this.controller = controller;
   }
 
@@ -44,7 +44,7 @@ class MessagePortSource implements UnderlyingSource<Uint8Array> {
 
   onMessage(message: { type: number; chunk?: Uint8Array; reason?: any }) {
     if (message.type === WRITE) {
-      this.controller.enqueue(message.chunk);
+      this.controller.enqueue(message.chunk!);
     } else if (message.type === ERROR) {
       this.controller.error(message.reason);
       this.port.close();

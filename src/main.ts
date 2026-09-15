@@ -247,7 +247,7 @@ const style: StyleSpecification = {
 
 const mapPromise = pEvent(window, "load")
   .then(() => import("maplibre-gl"))
-  .then(({ default: maplibre }) => {
+  .then((maplibre) => {
     maplibre.addProtocol(
       "mbtiles",
       createProtocolHandler(api.getTile.bind(api))
