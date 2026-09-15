@@ -4,9 +4,8 @@
   Cross-Origin-Embedder-Policy: require-corp
 
 # Without this the browser's 24-hour service worker update rule can delay a deploy reaching installed apps
+# (/index.html itself redirects to /, so only / needs the rule)
 /sw.js
-  Cache-Control: no-cache
-/index.html
   Cache-Control: no-cache
 /
   Cache-Control: no-cache
