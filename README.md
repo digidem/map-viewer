@@ -58,13 +58,16 @@ npm run generate-pwa-assets
 
 ## Deployment
 
+The app is deployed to [map-view.comapeo.app](https://map-view.comapeo.app) as a
+Cloudflare Worker with static assets (see `wrangler.jsonc`):
+
 ```bash
-npm run build
-npm run preview # preview locally
+npm run preview # preview the production build locally
+npm run deploy  # build and deploy with wrangler
 ```
 
-The contents of `dist` can be served by any host that applies the headers in
-`public/_headers` (cross-origin isolation is required for OPFS and
+The contents of `dist` can also be served by any host that applies the headers
+in `public/_headers` (cross-origin isolation is required for OPFS and
 sqlite-wasm).
 
 ## License

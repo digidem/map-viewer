@@ -1,0 +1,14 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "map-viewer",
+  "compatibility_date": "2026-09-15",
+  "routes": [{ "pattern": "map-view.comapeo.app", "custom_domain": true }],
+  "workers_dev": false,
+  // Defaults to workers_dev; PR previews need it on explicitly.
+  "preview_urls": true,
+  "assets": {
+    "directory": "./dist",
+    // Matches Pages' fallback to index.html when no 404.html exists.
+    "not_found_handling": "single-page-application",
+  },
+}
