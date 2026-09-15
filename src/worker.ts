@@ -6,33 +6,39 @@ import { MBTiles } from "mbtiles-reader";
 import type { Reader as SmpReader } from "styled-map-package-api/reader";
 import { layerStyles } from "./layer-styles.ts";
 
-const MBTILES_FILENAME = "tiles.mbtiles";
 const SMP_URI_BASE = "smp://maps.v1/";
 
 type OpenedFile =
-  | { kind: "mbtiles"; mbtiles: MBTiles }
+  | { kind: "mbtiles"; mbtiles: MBTiles; opfsName: string }
   | { kind: "smp"; reader: SmpReader };
 
+// Only ever holds a successfully opened file, so a failed or superseded open can't break tile serving
 let openedPromise: Promise<OpenedFile> | undefined;
 
 // Request access to the OPFS
 const rootPromise = navigator.storage.getDirectory().then(async (root) => {
-  // Cleanup on startup, in case last run did not clean up.
-  await root.removeEntry(MBTILES_FILENAME).catch(() => {});
+  // Cleanup on startup, in case last run did not clean up. Files still open in
+  // another tab are locked, so removing them fails harmlessly.
+  for await (const [name] of (root as any).entries() as AsyncIterable<
+    [string, FileSystemHandle]
+  >) {
+    if (name.endsWith(".mbtiles")) await root.removeEntry(name).catch(() => {});
+  }
   return root;
 });
 
 addEventListener("message", async (event) => {
   switch (event.data.type) {
     case "file":
-      openedPromise = openFile(event.data.payload);
-      openedPromise.catch(() => {});
+      openFile(event.data.payload).then((next) => {
+        const previous = openedPromise;
+        openedPromise = Promise.resolve(next);
+        previous?.then(closeFile);
+      }, () => {});
       return;
     case "beforeunload": {
-      const opened = await openedPromise?.catch(() => undefined);
-      if (opened?.kind === "mbtiles") opened.mbtiles.close();
-      if (opened?.kind === "smp") opened.reader.close();
-      (await rootPromise).removeEntry(MBTILES_FILENAME).catch(() => {});
+      const opened = await openedPromise;
+      if (opened) await closeFile(opened);
       return;
     }
     case "resourceRequest":
@@ -58,13 +64,22 @@ async function openFile(file: File): Promise<OpenedFile> {
       });
       return { kind, reader };
     }
-    await copyFileToOpfs(file, MBTILES_FILENAME);
-    const mbtiles = await MBTiles.open(MBTILES_FILENAME);
+    // A unique name per open: mbtiles-reader doesn't close the database when
+    // validation fails, which would otherwise leave a fixed filename locked
+    const opfsName = `tiles-${crypto.randomUUID()}.mbtiles`;
+    await copyFileToOpfs(file, opfsName);
+    let mbtiles: MBTiles;
+    try {
+      mbtiles = await MBTiles.open(opfsName);
+    } catch (err) {
+      (await rootPromise).removeEntry(opfsName).catch(() => {});
+      throw err;
+    }
     postMessage({
       type: "opened",
       payload: { kind, fileName: file.name, metadata: mbtiles.metadata },
     });
-    return { kind, mbtiles };
+    return { kind, mbtiles, opfsName };
   } catch (err) {
     postMessage({ type: "openError", error: errorMessage(err) });
     throw err;
@@ -127,10 +142,24 @@ async function getSmpResource(
   if (!url.startsWith(SMP_URI_BASE)) {
     throw new Error(`Invalid SMP URL: ${url}`);
   }
-  // MapLibre percent-encodes font stacks in glyph URLs; zip entry names are raw
-  const path = decodeURIComponent(url.slice(SMP_URI_BASE.length));
+  const path = safeDecodeURIComponent(url.slice(SMP_URI_BASE.length));
   const { stream } = await reader.getResource(path);
   return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+// Zip entry names are raw; decode in case a URL was percent-encoded, but a literal "%" in a name must not throw
+function safeDecodeURIComponent(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+async function closeFile(file: OpenedFile) {
+  if (file.kind === "smp") return file.reader.close();
+  file.mbtiles.close();
+  await (await rootPromise).removeEntry(file.opfsName).catch(() => {});
 }
 
 async function gunzipIfNeeded(data: Uint8Array): Promise<ArrayBuffer> {
@@ -312,8 +341,6 @@ async function copyFileToOpfs(file: File, name: string) {
   // Create a writable stream in OPFS
   const accessHandle = await opfsFileHandle.createSyncAccessHandle();
   try {
-    // A previous failed open may have left a longer file behind
-    accessHandle.truncate(0);
     // Set the position for writing
     let position = 0;
 

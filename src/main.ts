@@ -118,20 +118,30 @@ input?.addEventListener("change", async (e) => {
   input.value = "";
 });
 
+let opening = false;
+
 function openFile(file: File) {
+  // The picker is disabled while opening, but drops are not
+  if (opening) return;
+  opening = true;
   openError?.classList.add("hidden");
   setInProgress(true);
   worker.postMessage({ type: "file", payload: file });
 }
 
 worker.addEventListener("message", (event) => {
-  if (event.data.type !== "openError") return;
+  if (event.data.type === "opened") opening = false;
+  if (event.data.type === "openError") showOpenError(event.data.error);
+});
+
+function showOpenError(message: string) {
+  opening = false;
   if (openError) {
-    openError.textContent = event.data.error;
+    openError.textContent = message;
     openError.classList.remove("hidden");
   }
   setInProgress(false);
-});
+}
 
 // Drag-and-drop support
 let dragCounter = 0;
@@ -264,8 +274,14 @@ function showMbtiles(map: MaplibreMap, metadata: Record<string, any>) {
 }
 
 function showSmp(map: MaplibreMap, smpStyle: StyleSpecification) {
+  let styleLoaded = false;
+  // MapLibre skips style.load (and so never reveals the map) if it rejects the style
+  map.once("error", ({ error }) => {
+    if (!styleLoaded) showOpenError(`Could not display this map: ${error.message}`);
+  });
   map.setStyle(smpStyle, { diff: false });
   map.once("style.load", () => {
+    styleLoaded = true;
     const bounds: [number, number, number, number] | undefined = (
       smpStyle.metadata as any
     )?.["smp:bounds"];
@@ -386,9 +402,13 @@ async function startSmpDownload(fileName: string) {
   // If the iframe navigates before the SW has stored the stream (e.g. while the
   // SW is restarting), the fetch misses it and the download silently never starts
   const swReady = new MessageChannel();
-  const swAcked = new Promise((resolve) => {
-    swReady.port1.onmessage = resolve;
-  });
+  // A service worker from before this handshake existed never acks, so don't wait forever
+  const swAcked = Promise.race([
+    new Promise((resolve) => {
+      swReady.port1.onmessage = resolve;
+    }),
+    new Promise((resolve) => setTimeout(resolve, 2000)),
+  ]);
   sw.active.postMessage(
     {
       url: sw.scope + encodedName,

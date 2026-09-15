@@ -13,6 +13,8 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 const fixturePath = path.resolve("e2e/fixtures/plain_1.mbtiles");
 const vectorFixturePath = path.resolve("e2e/fixtures/vector_1.mbtiles");
 const smpFixturePath = path.resolve("e2e/fixtures/plain_1.smp");
+// Named .bin because *.sqlite is commonly gitignored; the app sniffs headers, not extensions
+const notMbtilesPath = path.resolve("e2e/fixtures/not-mbtiles-sqlite.bin");
 const baseUrl = "http://localhost:4174";
 
 const chromiumArgs =
@@ -234,6 +236,17 @@ function appTests(
     await dropFile(page, fs.readFileSync(smpFixturePath), "plain_1.smp");
     await page.locator("#map").waitFor({ state: "visible", timeout: 30_000 });
     await waitForLayer(page, "smp-bounds");
+  });
+
+  test("opens an mbtiles file after a sqlite file that is not mbtiles", async () => {
+    await page.goto(baseUrl);
+    await page.locator("#open-button").waitFor({ state: "visible" });
+    await dropFile(page, fs.readFileSync(notMbtilesPath), "notes.sqlite");
+    await page.locator("#open-error").waitFor({ state: "visible", timeout: 10_000 });
+
+    await dropFile(page, fs.readFileSync(fixturePath), "plain_1.mbtiles");
+    await page.locator("#map").waitFor({ state: "visible", timeout: 30_000 });
+    expect(await page.locator("#open-error").isVisible()).toBe(false);
   });
 
   test("shows an error for unsupported files", async () => {
