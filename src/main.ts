@@ -4,8 +4,17 @@ import { includeKeys } from "filter-obj";
 import createProtocolHandler from "./protocol-handler.ts";
 import { pEvent } from "p-event";
 // Type-only: maplibre-gl itself is loaded lazily via import() below, keeping it out of the entry chunk
-import type { IControl, StyleSpecification } from "maplibre-gl";
+import type {
+  IControl,
+  LngLatBoundsLike,
+  Map as MaplibreMap,
+  StyleSpecification,
+} from "maplibre-gl";
 import { layerStyles } from "./layer-styles.ts";
+
+type OpenedFile =
+  | { kind: "mbtiles"; fileName: string; metadata: Record<string, any> }
+  | { kind: "smp"; fileName: string; style: StyleSpecification };
 
 // Register service worker for PWA + streaming downloads
 if ("serviceWorker" in navigator) {
@@ -61,28 +70,28 @@ const worker = new Worker(new URL("./worker.ts", import.meta.url), {
 class Api {
   #id = 0;
   #worker: Worker;
-  #pendingTileRequests = new Map<number, DeferredPromise<ArrayBuffer>>();
+  #pendingRequests = new Map<number, DeferredPromise<ArrayBuffer>>();
   constructor(worker: Worker) {
     this.#worker = worker;
     worker.addEventListener("message", this.#handleMessage);
   }
   #handleMessage = (event: MessageEvent<any>) => {
-    const pending = this.#pendingTileRequests.get(event.data.id);
+    const pending = this.#pendingRequests.get(event.data.id);
     if (!pending) return;
-    this.#pendingTileRequests.delete(event.data.id);
+    this.#pendingRequests.delete(event.data.id);
     if (event.data.error) {
       pending.reject(new Error(event.data.error));
     } else {
       pending.resolve(event.data.payload);
     }
   };
-  async getTile({ z, x, y }: { z: number; x: number; y: number }) {
+  async getResource(url: string) {
     const requestId = this.#id++;
     const deferred = pDefer<ArrayBuffer>();
-    this.#pendingTileRequests.set(requestId, deferred);
+    this.#pendingRequests.set(requestId, deferred);
     this.#worker.postMessage({
-      type: "tileRequest",
-      payload: { z, x, y },
+      type: "resourceRequest",
+      payload: { url },
       id: requestId,
     });
     return deferred.promise;
@@ -96,6 +105,7 @@ const button = document.getElementById("open-button") as HTMLButtonElement;
 const spinner = document.getElementById("spinner") as HTMLDivElement;
 const dropHint = document.getElementById("drop-hint") as HTMLParagraphElement;
 const dropOverlay = document.getElementById("drop-overlay") as HTMLDivElement;
+const openError = document.getElementById("open-error") as HTMLParagraphElement;
 
 button?.addEventListener("click", async () => {
   input?.click();
@@ -105,12 +115,23 @@ input?.addEventListener("change", async (e) => {
   const file = (e.target as HTMLInputElement).files?.[0];
   if (!file) return;
   openFile(file);
+  input.value = "";
 });
 
 function openFile(file: File) {
+  openError?.classList.add("hidden");
   setInProgress(true);
   worker.postMessage({ type: "file", payload: file });
 }
+
+worker.addEventListener("message", (event) => {
+  if (event.data.type !== "openError") return;
+  if (openError) {
+    openError.textContent = event.data.error;
+    openError.classList.remove("hidden");
+  }
+  setInProgress(false);
+});
 
 // Drag-and-drop support
 let dragCounter = 0;
@@ -179,8 +200,8 @@ window.addEventListener("beforeunload", () => {
 pEvent<"message", MessageEvent<any>>(
   worker,
   "message",
-  (event) => event.data.type === "metadata"
-).then(async ({ data: { payload: metadata } }) => {
+  (event) => event.data.type === "opened"
+).then(async ({ data: { payload } }: { data: { payload: OpenedFile } }) => {
   const map = await mapPromise;
   const { NavigationControl } = await import("maplibre-gl");
   map.addControl(
@@ -189,10 +210,12 @@ pEvent<"message", MessageEvent<any>>(
     }),
     "top-right"
   );
-  map.addControl(
-    new SaveControl({ fileName: metadata.fileName }),
-    "top-right"
-  );
+  if (payload.kind === "mbtiles") {
+    map.addControl(
+      new SaveControl({ fileName: payload.fileName }),
+      "top-right"
+    );
+  }
   map.addControl(
     new CloseControl(() => {
       window.location.reload();
@@ -200,13 +223,28 @@ pEvent<"message", MessageEvent<any>>(
     "top-left"
   );
 
+  if (payload.kind === "smp") {
+    showSmp(map, payload.style);
+  } else {
+    showMbtiles(map, payload.metadata);
+  }
+  map.on("sourcedata", () => {
+    map.getContainer().classList.remove("hidden");
+    mapVisible = true;
+  });
+});
+
+function showMbtiles(map: MaplibreMap, metadata: Record<string, any>) {
   if (metadata.format === "pbf") {
     map.addSource("mbtiles", {
       ...includeKeys(metadata, ["bounds", "center", "minzoom", "maxzoom"]),
       type: "vector",
       tiles: ["mbtiles://./{z}/{x}/{y}"],
     });
-    for (const layerStyle of layerStyles(metadata.vector_layers || [])) {
+    for (const layerStyle of layerStyles(
+      metadata.vector_layers || [],
+      "mbtiles"
+    )) {
       map.addLayer(layerStyle);
     }
   } else {
@@ -223,11 +261,43 @@ pEvent<"message", MessageEvent<any>>(
     });
   }
   map.fitBounds(metadata.bounds, { duration: 0 });
-  map.on("sourcedata", () => {
-    map.getContainer().classList.remove("hidden");
-    mapVisible = true;
+}
+
+function showSmp(map: MaplibreMap, smpStyle: StyleSpecification) {
+  map.setStyle(smpStyle, { diff: false });
+  map.once("style.load", () => {
+    const bounds: [number, number, number, number] | undefined = (
+      smpStyle.metadata as any
+    )?.["smp:bounds"];
+    if (!bounds) {
+      map.jumpTo({ center: smpStyle.center, zoom: smpStyle.zoom });
+      return;
+    }
+    const [w, s, e, n] = bounds;
+    map.addSource("smp-bounds", {
+      type: "geojson",
+      data: {
+        type: "Feature",
+        properties: {},
+        geometry: {
+          type: "Polygon",
+          coordinates: [[[w, s], [e, s], [e, n], [w, n], [w, s]]],
+        },
+      },
+    });
+    map.addLayer({
+      id: "smp-bounds",
+      type: "line",
+      source: "smp-bounds",
+      paint: {
+        "line-color": "#1854f6",
+        "line-width": 2,
+        "line-dasharray": [2, 2],
+      },
+    });
+    map.fitBounds(bounds as LngLatBoundsLike, { duration: 0 });
   });
-});
+}
 
 const style: StyleSpecification = {
   version: 8,
@@ -253,10 +323,9 @@ const mapPromise = pEvent(window, "load")
   .then(([maplibre, { default: maplibreWorkerUrl }]) => {
     // maplibre-gl 6 otherwise resolves its worker to a path Vite doesn't emit
     maplibre.setWorkerUrl(maplibreWorkerUrl);
-    maplibre.addProtocol(
-      "mbtiles",
-      createProtocolHandler(api.getTile.bind(api))
-    );
+    const protocolHandler = createProtocolHandler(api.getResource.bind(api));
+    maplibre.addProtocol("mbtiles", protocolHandler);
+    maplibre.addProtocol("smp", protocolHandler);
     const map = new maplibre.Map({
       container: "map",
       center: [0, 0],
@@ -345,7 +414,7 @@ class CloseControl implements IControl {
     const button = document.createElement("button");
     button.className = "maplibregl-ctrl-icon";
     button.title = "Close";
-    button.textContent = "\u2716\uFE0F";
+    button.textContent = "✖️";
     button.onclick = this.#onClick;
     this.#container.appendChild(button);
     return this.#container;

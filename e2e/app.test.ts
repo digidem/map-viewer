@@ -1,3 +1,4 @@
+import fs from "fs";
 import path from "path";
 import {
   chromium,
@@ -11,6 +12,7 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
 const fixturePath = path.resolve("e2e/fixtures/plain_1.mbtiles");
 const vectorFixturePath = path.resolve("e2e/fixtures/vector_1.mbtiles");
+const smpFixturePath = path.resolve("e2e/fixtures/plain_1.smp");
 const baseUrl = "http://localhost:4174";
 
 const chromiumArgs =
@@ -18,8 +20,8 @@ const chromiumArgs =
     ? ["--use-gl=angle", "--use-angle=metal"]
     : ["--use-gl=angle", "--use-angle=swiftshader"];
 
-/** Open an mbtiles file and wait for the map to render */
-async function openMbtilesFile(page: Page, filePath = fixturePath) {
+/** Open a map file via the file picker and wait for the map to render */
+async function openMapFile(page: Page, filePath = fixturePath) {
   await page.goto(baseUrl);
   await page.locator("#open-button").waitFor({ state: "visible" });
 
@@ -34,6 +36,32 @@ async function openMbtilesFile(page: Page, filePath = fixturePath) {
 
   const canvas = map.locator("canvas");
   await canvas.waitFor({ state: "attached", timeout: 10_000 });
+}
+
+/** Dispatch a synthetic drop of the given bytes onto the document */
+async function dropFile(page: Page, bytes: Uint8Array, fileName: string) {
+  await page.evaluate(
+    async ({ bytes, fileName }) => {
+      const file = new File([new Uint8Array(bytes)], fileName);
+      const dataTransfer = new DataTransfer();
+      dataTransfer.items.add(file);
+      document.dispatchEvent(
+        new DragEvent("dragenter", { dataTransfer, bubbles: true }),
+      );
+      document.dispatchEvent(
+        new DragEvent("drop", { dataTransfer, bubbles: true }),
+      );
+    },
+    { bytes: Array.from(bytes), fileName },
+  );
+}
+
+async function waitForLayer(page: Page, layerId: string) {
+  await page.waitForFunction(
+    (id) => Boolean((window as any).maplibreMap?.getLayer(id)),
+    layerId,
+    { timeout: 30_000 },
+  );
 }
 
 function appTests(
@@ -101,30 +129,7 @@ function appTests(
     await page.goto(baseUrl);
     await page.locator("#open-button").waitFor({ state: "visible" });
 
-    // Read the fixture file and create a DataTransfer-like drop event
-    const buffer = await import("fs").then((fs) =>
-      fs.readFileSync(fixturePath),
-    );
-
-    // Use Playwright's page.evaluate to simulate a drop with a real File
-    await page.evaluate(
-      async ({ bytes, fileName }) => {
-        const uint8 = new Uint8Array(bytes);
-        const file = new File([uint8], fileName);
-        const dataTransfer = new DataTransfer();
-        dataTransfer.items.add(file);
-
-        // Dispatch dragenter first so the overlay shows
-        document.dispatchEvent(
-          new DragEvent("dragenter", { dataTransfer, bubbles: true }),
-        );
-        // Then dispatch drop
-        document.dispatchEvent(
-          new DragEvent("drop", { dataTransfer, bubbles: true }),
-        );
-      },
-      { bytes: Array.from(buffer), fileName: "plain_1.mbtiles" },
-    );
+    await dropFile(page, fs.readFileSync(fixturePath), "plain_1.mbtiles");
 
     // Wait for map to become visible
     const map = page.locator("#map");
@@ -137,13 +142,13 @@ function appTests(
   });
 
   test("can open and view an mbtiles file", async () => {
-    await openMbtilesFile(page);
+    await openMapFile(page);
     const canvas = page.locator("#map canvas");
     expect(await canvas.count()).toBeGreaterThan(0);
   });
 
   test("renders vector tiles", async () => {
-    await openMbtilesFile(page, vectorFixturePath);
+    await openMapFile(page, vectorFixturePath);
     // Vector tiles are parsed in MapLibre's own worker, unlike raster tiles
     await page.waitForFunction(
       () => {
@@ -159,7 +164,7 @@ function appTests(
   });
 
   test("can pan the map by dragging", async () => {
-    await openMbtilesFile(page);
+    await openMapFile(page);
 
     const canvas = page.locator("#map canvas").first();
     const box = await canvas.boundingBox();
@@ -189,9 +194,37 @@ function appTests(
     expect(centerAfter.lng).not.toBeCloseTo(centerBefore.lng, 1);
   });
 
+  test("can open an smp file via the file picker", async () => {
+    await openMapFile(page, smpFixturePath);
+    await waitForLayer(page, "raster");
+    await waitForLayer(page, "smp-bounds");
+    // Exporting only applies to MBTiles
+    expect(await page.locator("#download-smp").count()).toBe(0);
+  });
+
+  test("can open an smp file via drag and drop", async () => {
+    await page.goto(baseUrl);
+    await page.locator("#open-button").waitFor({ state: "visible" });
+    await dropFile(page, fs.readFileSync(smpFixturePath), "plain_1.smp");
+    await page.locator("#map").waitFor({ state: "visible", timeout: 30_000 });
+    await waitForLayer(page, "smp-bounds");
+  });
+
+  test("shows an error for unsupported files", async () => {
+    await page.goto(baseUrl);
+    await page.locator("#open-button").waitFor({ state: "visible" });
+    await dropFile(page, new TextEncoder().encode("not a map"), "notes.txt");
+
+    const error = page.locator("#open-error");
+    await error.waitFor({ state: "visible", timeout: 10_000 });
+    expect(await error.textContent()).toContain("notes.txt");
+    await page.locator("#open-button").waitFor({ state: "visible" });
+    expect(await page.locator("#map").isVisible()).toBe(false);
+  });
+
   const testDownload = opts?.skipDownloadTest ? test.skip : test;
   testDownload("can download mbtiles as smp file", async () => {
-    await openMbtilesFile(page);
+    await openMapFile(page);
 
     const downloadBtn = page.locator("#download-smp");
     await downloadBtn.waitFor({ state: "visible", timeout: 10_000 });
