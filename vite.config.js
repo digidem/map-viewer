@@ -3,7 +3,7 @@ import { VitePWA } from "vite-plugin-pwa";
 
 export default defineConfig({
   build: {
-    chunkSizeWarningLimit: 1000,
+    chunkSizeWarningLimit: 1200,
   },
   worker: {
     format: "es",

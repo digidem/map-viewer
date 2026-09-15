@@ -246,8 +246,15 @@ const style: StyleSpecification = {
 };
 
 const mapPromise = pEvent(window, "load")
-  .then(() => import("maplibre-gl"))
-  .then((maplibre) => {
+  .then(() =>
+    Promise.all([
+      import("maplibre-gl"),
+      import("maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url"),
+    ])
+  )
+  .then(([maplibre, { default: maplibreWorkerUrl }]) => {
+    // maplibre-gl 6 otherwise resolves its worker to a path Vite doesn't emit
+    maplibre.setWorkerUrl(maplibreWorkerUrl);
     maplibre.addProtocol(
       "mbtiles",
       createProtocolHandler(api.getTile.bind(api))
