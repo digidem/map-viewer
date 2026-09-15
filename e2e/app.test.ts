@@ -147,20 +147,46 @@ function appTests(
     expect(await canvas.count()).toBeGreaterThan(0);
   });
 
-  test("renders vector tiles", async () => {
-    await openMapFile(page, vectorFixturePath);
-    // Vector tiles are parsed in MapLibre's own worker, unlike raster tiles
+  // Vector tiles are parsed in MapLibre's own worker, unlike raster tiles
+  async function waitForRenderedFeatures(layerId: string) {
     await page.waitForFunction(
-      () => {
+      (id) => {
         const map = (window as any).maplibreMap;
         return (
-          map?.getLayer("shapes-polygons") &&
-          map.queryRenderedFeatures({ layers: ["shapes-polygons"] }).length > 0
+          map?.getLayer(id) &&
+          map.queryRenderedFeatures({ layers: [id] }).length > 0
         );
       },
-      null,
+      layerId,
       { timeout: 30_000 },
     );
+  }
+
+  test("renders vector tiles", async () => {
+    await openMapFile(page, vectorFixturePath);
+    await waitForRenderedFeatures("shapes-polygons");
+  });
+
+  const testRoundTrip = opts?.skipDownloadTest ? test.skip : test;
+  testRoundTrip("renders a vector mbtiles exported to smp", async () => {
+    await openMapFile(page, vectorFixturePath);
+    const downloadBtn = page.locator("#download-smp");
+    await downloadBtn.waitFor({ state: "visible", timeout: 10_000 });
+    await page.evaluate(() => navigator.serviceWorker.ready);
+
+    const [download] = await Promise.all([
+      page.waitForEvent("download", { timeout: 60_000 }),
+      downloadBtn.click(),
+    ]);
+    const chunks: Buffer[] = [];
+    for await (const chunk of await download.createReadStream()) {
+      chunks.push(Buffer.from(chunk));
+    }
+
+    await page.goto(baseUrl);
+    await page.locator("#open-button").waitFor({ state: "visible" });
+    await dropFile(page, Buffer.concat(chunks), "vector_1.smp");
+    await waitForRenderedFeatures("shapes-polygons");
   });
 
   test("can pan the map by dragging", async () => {
