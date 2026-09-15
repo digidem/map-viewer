@@ -1,6 +1,5 @@
 import "maplibre-gl/dist/maplibre-gl.css";
 import "@fontsource/hanken-grotesk/latin-400.css";
-import "@fontsource/hanken-grotesk/latin-500.css";
 import "@fontsource/hanken-grotesk/latin-600.css";
 import "@fontsource/hanken-grotesk/latin-700.css";
 import pDefer, { type DeferredPromise } from "p-defer";
@@ -243,8 +242,15 @@ pEvent<"message", MessageEvent<any>>(
     showMbtiles(map, payload.metadata);
   }
   map.on("sourcedata", () => {
+    if (mapVisible) return;
     map.getContainer().classList.remove("hidden");
     mapVisible = true;
+    // The map covers the landing page, but its buttons would still be reachable by keyboard
+    for (const el of document.querySelectorAll<HTMLElement>(
+      ".mv-landing, #install-guide"
+    )) {
+      el.inert = true;
+    }
   });
 });
 

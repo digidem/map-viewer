@@ -70,9 +70,11 @@ body {
   position: absolute;
   inset: 0;
   display: flex;
-  align-items: center;
+  /* `safe` keeps the card's top reachable when it is taller than the viewport */
+  align-items: safe center;
   justify-content: center;
   padding: 72px 16px 96px;
+  overflow-y: auto;
 }
 .mv-card {
   width: 100%;
@@ -151,7 +153,7 @@ body {
 }
 .mv-drop-formats {
   font-size: 13px;
-  color: #888;
+  color: #6b6b6b;
   margin: 0;
 }
 .mv-error {
@@ -207,10 +209,24 @@ body {
   }
 }
 
+/* Landscape phones: leave room for the card and keep the install hint off the button */
+@media (max-height: 500px) {
+  .mv-landing {
+    padding-block: 56px 16px;
+  }
+  .mv-install {
+    display: none !important;
+  }
+}
+
 /* ── Map controls ────────────────────────────────────────────────── */
-.maplibregl-ctrl-top-left,
+.maplibregl-ctrl-top-left {
+  padding-top: env(safe-area-inset-top);
+  padding-left: env(safe-area-inset-left);
+}
 .maplibregl-ctrl-top-right {
   padding-top: env(safe-area-inset-top);
+  padding-right: env(safe-area-inset-right);
 }
 .maplibregl-ctrl-group button {
   color: #333;

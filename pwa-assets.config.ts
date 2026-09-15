@@ -9,8 +9,15 @@ export default defineConfig({
   },
   preset: {
     ...preset,
-    maskable: { ...preset.maskable, resizeOptions: { background: "#ffffff" } },
-    apple: { ...preset.apple, resizeOptions: { background: "#ffffff" } },
+    // resizeOptions replaces the preset's wholesale, so keep its fit: "contain"
+    maskable: {
+      ...preset.maskable,
+      resizeOptions: { fit: "contain", background: "#ffffff" },
+    },
+    apple: {
+      ...preset.apple,
+      resizeOptions: { fit: "contain", background: "#ffffff" },
+    },
   },
   images: ["public/logo.svg"],
 });
