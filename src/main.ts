@@ -21,10 +21,18 @@ type OpenedFile =
 
 // Register service worker for PWA + streaming downloads
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register(
-    import.meta.env.MODE === "production" ? "/sw.js" : "/dev-sw.js?dev-sw",
-    { type: import.meta.env.MODE === "production" ? "classic" : "module" },
-  );
+  navigator.serviceWorker
+    .register(
+      import.meta.env.MODE === "production" ? "/sw.js" : "/dev-sw.js?dev-sw",
+      {
+        type: import.meta.env.MODE === "production" ? "classic" : "module",
+        // Without this a cached sw.js can keep an old worker alive for a day,
+        // and downloads break against a worker that predates them
+        updateViaCache: "none",
+      },
+    )
+    .then((registration) => registration.update())
+    .catch(() => {});
 }
 
 // PWA Install Guidance
@@ -393,61 +401,108 @@ function waitForSmpComplete(): Promise<void> {
   });
 }
 
-/** Start SMP generation in the worker, streaming result to a download */
-async function startSmpDownload(fileName: string) {
-  const done = waitForSmpComplete();
+// Kept in step with sw.ts: an older service worker ignores /_download/ requests
+const DOWNLOAD_PROTOCOL = 2;
 
-  const sw = await navigator.serviceWorker?.getRegistration();
-  if (!sw?.active) {
-    throw new Error("Service worker not available for download");
+/** Ask the active service worker which download protocol it speaks (0 = none) */
+function downloadProtocol(registration: ServiceWorkerRegistration) {
+  return new Promise<number>((resolve) => {
+    const sw = registration.active;
+    if (!sw) return resolve(0);
+    const channel = new MessageChannel();
+    const timer = setTimeout(() => resolve(0), 1000);
+    channel.port1.onmessage = (event) => {
+      clearTimeout(timer);
+      resolve(event.data?.downloadProtocol ?? 0);
+    };
+    sw.postMessage({ type: "ping" }, [channel.port2]);
+  });
+}
+
+/** A worker installed before downloads existed silently ignores them, and the
+ * page only finds out when a download fails, so replace it up front */
+async function ensureDownloadWorker() {
+  const registration = await navigator.serviceWorker?.ready;
+  if (!registration) return;
+  if ((await downloadProtocol(registration)) >= DOWNLOAD_PROTOCOL) return;
+  await registration.update().catch(() => {});
+}
+
+void ensureDownloadWorker();
+
+/** Resolves once the service worker reports it received the download request */
+function waitForDownloadStart(url: string, timeout: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const finish = (started: boolean) => {
+      clearTimeout(timer);
+      navigator.serviceWorker.removeEventListener("message", onMessage);
+      resolve(started);
+    };
+    const onMessage = (event: MessageEvent) => {
+      if (event.data?.type === "downloadStarted" && event.data.url === url) {
+        finish(true);
+      }
+    };
+    const timer = setTimeout(() => finish(false), timeout);
+    navigator.serviceWorker.addEventListener("message", onMessage);
+  });
+}
+
+/** Stream the package through the service worker, so the browser writes it to
+ * disk as it arrives and nothing is held in memory */
+async function startSmpDownload(fileName: string) {
+  if (!navigator.serviceWorker?.controller) {
+    throw new Error(
+      "Downloads need the service worker — reload the page and try again",
+    );
   }
 
-  const channel = new MessageChannel();
   const encodedName = encodeURIComponent(fileName)
     .replace(
       /['()]/g,
       (c) => "%" + c.charCodeAt(0).toString(16).toUpperCase(),
     )
     .replace(/\*/g, "%2A");
+  const url = `${location.origin}/_download/${crypto.randomUUID()}/${encodedName}`;
+
+  // Navigate first and synchronously: Safari only starts a download while the
+  // click's user activation is live. The service worker holds the request open
+  // until the stream below reaches it.
+  const iframe = document.createElement("iframe");
+  iframe.hidden = true;
+  iframe.src = url;
+  document.body.appendChild(iframe);
+
+  // Nothing is generated until the request is known to have arrived
+  if (!(await waitForDownloadStart(url, 5000))) {
+    iframe.remove();
+    throw new Error(
+      "The service worker did not receive the download request — reload the page and try again",
+    );
+  }
 
   const headers = {
-    "content-disposition": "attachment; filename*=UTF-8''" + encodedName,
+    // Safari ignores filename*, so send a plain ASCII filename as well
+    "content-disposition": `attachment; filename="${fileName.replace(/[^\x20-\x7e]/g, "_").replace(/["\\]/g, "_")}"; filename*=UTF-8''${encodedName}`,
     "content-type": "application/octet-stream",
   };
 
-  // If the iframe navigates before the SW has stored the stream (e.g. while the
-  // SW is restarting), the fetch misses it and the download silently never starts
-  const swReady = new MessageChannel();
-  // A service worker from before this handshake existed never acks, so don't wait forever
-  const swAcked = Promise.race([
-    new Promise((resolve) => {
-      swReady.port1.onmessage = resolve;
-    }),
-    new Promise((resolve) => setTimeout(resolve, 2000)),
+  const done = waitForSmpComplete();
+  const channel = new MessageChannel();
+  const registration = await navigator.serviceWorker.ready;
+  registration.active?.postMessage({ url, headers, readablePort: channel.port1 }, [
+    channel.port1,
   ]);
-  sw.active.postMessage(
-    {
-      url: sw.scope + encodedName,
-      headers,
-      readablePort: channel.port1,
-      ackPort: swReady.port2,
-    },
-    [channel.port1, swReady.port2],
-  );
-  await swAcked;
-  swReady.port1.close();
-
   worker.postMessage(
     { type: "generateSmp", port: channel.port2 },
     [channel.port2],
   );
 
-  const iframe = document.createElement("iframe");
-  iframe.hidden = true;
-  iframe.src = sw.scope + encodedName;
-  document.body.appendChild(iframe);
-
-  await done;
+  try {
+    await done;
+  } finally {
+    iframe.remove();
+  }
 }
 
 class CloseControl implements IControl {
@@ -490,6 +545,20 @@ class SaveControl implements IControl {
     btn.className =
       "maplibregl-ctrl-icon block w-[29px] h-[29px] cursor-pointer border-0 bg-transparent p-0";
     btn.title = "Download as SMP";
+    // Downloads are streamed through the service worker, which doesn't control
+    // the page for the first moments after a first visit
+    if (!navigator.serviceWorker?.controller) {
+      btn.disabled = true;
+      btn.title = "Preparing download…";
+      navigator.serviceWorker?.addEventListener(
+        "controllerchange",
+        () => {
+          btn.disabled = false;
+          btn.title = "Download as SMP";
+        },
+        { once: true },
+      );
+    }
     const downloadIcon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-[19px] h-[19px] m-[5px]"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`;
     const spinnerIcon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="w-[19px] h-[19px] m-[5px] animate-spin"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>`;
     btn.innerHTML = downloadIcon;

@@ -55,26 +55,74 @@ class MessagePortSource implements UnderlyingDefaultSource<Uint8Array> {
   }
 }
 
-const pending = new Map<
-  string,
-  { rs: ReadableStream<Uint8Array>; headers: Record<string, string> }
->();
+type Download = {
+  rs: ReadableStream<Uint8Array>;
+  headers: Record<string, string>;
+};
+
+const DOWNLOAD_PATH = "/_download/";
+const DOWNLOAD_TIMEOUT = 30_000;
+
+const pending = new Map<string, Download>();
+const waiting = new Map<string, (download: Download) => void>();
+
+// Bumped when the download protocol changes, so a page can tell whether the
+// worker answering it is old enough to ignore its download requests
+const DOWNLOAD_PROTOCOL = 2;
 
 self.addEventListener("message", (evt) => {
   const data = evt.data;
-  if (data.url && data.readablePort) {
-    const rs = new ReadableStream(
-      new MessagePortSource(data.readablePort),
-      new CountQueuingStrategy({ highWaterMark: 4 }),
-    );
-    pending.set(data.url, { rs, headers: data.headers });
-    data.ackPort?.postMessage(null);
+  if (data?.type === "ping") {
+    evt.ports[0]?.postMessage({ downloadProtocol: DOWNLOAD_PROTOCOL });
+    return;
+  }
+  if (!data?.url || !data.readablePort) return;
+  const rs = new ReadableStream(
+    new MessagePortSource(data.readablePort),
+    new CountQueuingStrategy({ highWaterMark: 4 }),
+  );
+  const download = { rs, headers: data.headers };
+  const waiter = waiting.get(data.url);
+  if (waiter) {
+    waiting.delete(data.url);
+    waiter(download);
+  } else {
+    pending.set(data.url, download);
   }
 });
 
+// Safari does not always route a navigation through the service worker, and the
+// page can only tell by being told the request arrived
+async function announceDownload(url: string) {
+  const clients = await self.clients.matchAll({ includeUncontrolled: true });
+  for (const client of clients) {
+    client.postMessage({ type: "downloadStarted", url });
+  }
+}
+
 self.addEventListener("fetch", (event) => {
-  const data = pending.get(event.request.url);
-  if (!data) return;
-  pending.delete(event.request.url);
-  event.respondWith(new Response(data.rs, { headers: data.headers }));
+  const url = event.request.url;
+  const ready = pending.get(url);
+  if (ready) {
+    pending.delete(url);
+    event.waitUntil(announceDownload(url));
+    event.respondWith(new Response(ready.rs, { headers: ready.headers }));
+    return;
+  }
+  if (!new URL(url).pathname.startsWith(DOWNLOAD_PATH)) return;
+  event.waitUntil(announceDownload(url));
+  // The page navigates here synchronously to keep Safari's user activation, and
+  // sends the stream just after, so hold the request open until it arrives
+  event.respondWith(
+    new Promise<Response>((resolve) => {
+      const timer = setTimeout(() => {
+        waiting.delete(url);
+        resolve(new Response("Download expired", { status: 504 }));
+      }, DOWNLOAD_TIMEOUT);
+      waiting.set(url, (download) => {
+        clearTimeout(timer);
+        resolve(new Response(download.rs, { headers: download.headers }));
+      });
+    }),
+  );
 });

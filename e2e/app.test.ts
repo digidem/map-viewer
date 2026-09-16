@@ -15,6 +15,8 @@ const vectorFixturePath = path.resolve("e2e/fixtures/vector_1.mbtiles");
 const smpFixturePath = path.resolve("e2e/fixtures/plain_1.smp");
 // Named .bin because *.sqlite is commonly gitignored; the app sniffs headers, not extensions
 const notMbtilesPath = path.resolve("e2e/fixtures/not-mbtiles-sqlite.bin");
+// Every tile is identical, so exporting it exercises the writer's tile dedupe
+const dupFixturePath = path.resolve("e2e/fixtures/dup_1.mbtiles");
 const baseUrl = "http://localhost:4174";
 
 const chromiumArgs =
@@ -55,6 +57,17 @@ async function dropFile(page: Page, bytes: Uint8Array, fileName: string) {
       );
     },
     { bytes: Array.from(bytes), fileName },
+  );
+}
+
+/** Exporting is disabled until the service worker controls the page */
+async function waitForDownloadsReady(page: Page) {
+  await page.waitForFunction(
+    () =>
+      !(document.querySelector("#download-smp") as HTMLButtonElement | null)
+        ?.disabled,
+    null,
+    { timeout: 30_000 },
   );
 }
 
@@ -174,7 +187,7 @@ function appTests(
     await openMapFile(page, vectorFixturePath);
     const downloadBtn = page.locator("#download-smp");
     await downloadBtn.waitFor({ state: "visible", timeout: 10_000 });
-    await page.evaluate(() => navigator.serviceWorker.ready);
+    await waitForDownloadsReady(page);
 
     const [download] = await Promise.all([
       page.waitForEvent("download", { timeout: 60_000 }),
@@ -190,6 +203,41 @@ function appTests(
     await dropFile(page, Buffer.concat(chunks), "vector_1.smp");
     await waitForRenderedFeatures("shapes-polygons");
   });
+
+  // Deduped tiles share one local file header, which a zip bomb check rejects
+  testRoundTrip("reopens an export whose tiles are all duplicates", async () => {
+    await openMapFile(page, dupFixturePath);
+    const downloadBtn = page.locator("#download-smp");
+    await downloadBtn.waitFor({ state: "visible", timeout: 10_000 });
+    await waitForDownloadsReady(page);
+
+    const [download] = await Promise.all([
+      page.waitForEvent("download", { timeout: 60_000 }),
+      downloadBtn.click(),
+    ]);
+    const chunks: Buffer[] = [];
+    for await (const chunk of await download.createReadStream()) {
+      chunks.push(Buffer.from(chunk));
+    }
+
+    const warnings: string[] = [];
+    const onConsole = (message: { text: () => string }) => {
+      if (message.text().includes("Could not load")) warnings.push(message.text());
+    };
+    page.on("console", onConsole);
+    try {
+      await page.goto(baseUrl);
+      await page.locator("#open-button").waitFor({ state: "visible" });
+      await dropFile(page, Buffer.concat(chunks), "dup_1.smp");
+      await page.locator("#map").waitFor({ state: "visible", timeout: 30_000 });
+      await waitForLayer(page, "raster");
+      // Deduplicated tiles fail to read rather than hang, so a settle is enough
+      await page.waitForTimeout(2_000);
+    } finally {
+      page.off("console", onConsole);
+    }
+    expect(warnings).toEqual([]);
+  }, 60_000);
 
   test("can pan the map by dragging", async () => {
     await openMapFile(page);
@@ -268,14 +316,7 @@ function appTests(
     const downloadBtn = page.locator("#download-smp");
     await downloadBtn.waitFor({ state: "visible", timeout: 10_000 });
 
-    // Remove showSaveFilePicker so the code uses the service worker streaming
-    // path (which triggers a download via Content-Disposition that Playwright
-    // can capture).
-    await page.evaluate(async () => {
-      delete (window as any).showSaveFilePicker;
-      // Ensure service worker is active before triggering download
-      await navigator.serviceWorker.ready;
-    });
+    await waitForDownloadsReady(page);
 
     const [download] = await Promise.all([
       page.waitForEvent("download", { timeout: 60_000 }),
@@ -295,6 +336,24 @@ function appTests(
     expect(fileContents[0]).toBe(0x50); // P
     expect(fileContents[1]).toBe(0x4b); // K
     expect(fileContents.length).toBeGreaterThan(100);
+  });
+
+  // Downloads are streamed through the service worker; without one exporting
+  // stays unavailable rather than buffering the whole package in memory
+  testDownload("disables export when the download can't be streamed", async () => {
+    const context = await browser.newContext({ serviceWorkers: "block" });
+    const uncontrolled = await context.newPage();
+    try {
+      await openMapFile(uncontrolled);
+      const downloadBtn = uncontrolled.locator("#download-smp");
+      await downloadBtn.waitFor({ state: "visible", timeout: 10_000 });
+
+      expect(await downloadBtn.isDisabled()).toBe(true);
+      expect(await downloadBtn.getAttribute("title")).toContain("Preparing");
+      expect(await uncontrolled.locator("#save-smp").count()).toBe(0);
+    } finally {
+      await context.close();
+    }
   });
 }
 
