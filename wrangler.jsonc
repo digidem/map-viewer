@@ -2,7 +2,7 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "map-viewer",
   "compatibility_date": "2026-09-15",
-  "routes": [{ "pattern": "map-view.comapeo.app", "custom_domain": true }],
+  "routes": [{ "pattern": "map-viewer.comapeo.app", "custom_domain": true }],
   "workers_dev": false,
   // Defaults to workers_dev; preview URLs (e.g. from Workers Builds) need it on explicitly.
   "preview_urls": true,
