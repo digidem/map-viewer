@@ -17,6 +17,8 @@ export default function createProtocolHandler(
     } catch (error) {
       // Missing tiles are expected outside a tileset's coverage; styles, sprites and glyphs are not
       if (type === "json" || type === "string") throw error;
+      // Returning empty data renders nothing, so without this a broken package looks like an empty map
+      console.warn(`Could not load ${url}:`, error);
       return { data: undefined };
     }
   };

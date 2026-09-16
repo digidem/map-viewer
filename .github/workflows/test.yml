@@ -33,13 +33,13 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ steps.playwright-version.outputs.PLAYWRIGHT_VERSION }}
 
-      - name: Install Playwright Chromium
+      - name: Install Playwright browsers
         if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps chromium webkit
 
       - name: Install Playwright dependencies
         if: steps.playwright-cache.outputs.cache-hit == 'true'
-        run: npx playwright install-deps chromium
+        run: npx playwright install-deps chromium webkit
 
       - name: Build
         run: npx vite build

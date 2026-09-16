@@ -316,3 +316,37 @@ describeFirefox("firefox", () => {
 describe.skip("webkit", () => {
   appTests(webkit);
 });
+
+// SMP files are read straight from the File, so unlike MBTiles they need no OPFS
+// and do work in WebKit. Safari evaluates the worker's module graph twice for a
+// dynamic import, which left half the tile requests answered by a second copy of
+// the worker with no file open — an empty map with no error.
+describe("webkit (smp only)", () => {
+  let browser: Browser;
+  let page: Page;
+  let warnings: string[] = [];
+
+  beforeAll(async () => {
+    browser = await webkit.launch({ headless: true });
+    page = await browser.newPage();
+    page.on("console", (message) => {
+      if (message.text().includes("Could not load")) warnings.push(message.text());
+    });
+  });
+
+  afterAll(async () => {
+    await browser?.close();
+  });
+
+  test("loads every resource of an smp file", async () => {
+    warnings = [];
+    await openMapFile(page, smpFixturePath);
+    await waitForLayer(page, "raster");
+    await page.waitForFunction(
+      () => (window as any).maplibreMap?.areTilesLoaded(),
+      null,
+      { timeout: 30_000 },
+    );
+    expect(warnings).toEqual([]);
+  });
+});
