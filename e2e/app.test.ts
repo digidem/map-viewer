@@ -15,6 +15,8 @@ const vectorFixturePath = path.resolve("e2e/fixtures/vector_1.mbtiles");
 const smpFixturePath = path.resolve("e2e/fixtures/plain_1.smp");
 // Named .bin because *.sqlite is commonly gitignored; the app sniffs headers, not extensions
 const notMbtilesPath = path.resolve("e2e/fixtures/not-mbtiles-sqlite.bin");
+// Every tile is identical, so exporting it exercises the writer's tile dedupe
+const dupFixturePath = path.resolve("e2e/fixtures/dup_1.mbtiles");
 const baseUrl = "http://localhost:4174";
 
 const chromiumArgs =
@@ -189,6 +191,44 @@ function appTests(
     await page.locator("#open-button").waitFor({ state: "visible" });
     await dropFile(page, Buffer.concat(chunks), "vector_1.smp");
     await waitForRenderedFeatures("shapes-polygons");
+  });
+
+  // Deduped tiles share one local file header, which a zip bomb check rejects
+  testRoundTrip("reopens an export whose tiles are all duplicates", async () => {
+    await openMapFile(page, dupFixturePath);
+    const downloadBtn = page.locator("#download-smp");
+    await downloadBtn.waitFor({ state: "visible", timeout: 10_000 });
+    await page.evaluate(() => navigator.serviceWorker.ready);
+
+    const [download] = await Promise.all([
+      page.waitForEvent("download", { timeout: 60_000 }),
+      downloadBtn.click(),
+    ]);
+    const chunks: Buffer[] = [];
+    for await (const chunk of await download.createReadStream()) {
+      chunks.push(Buffer.from(chunk));
+    }
+
+    const warnings: string[] = [];
+    const onConsole = (message: { text: () => string }) => {
+      if (message.text().includes("Could not load")) warnings.push(message.text());
+    };
+    page.on("console", onConsole);
+    try {
+      await page.goto(baseUrl);
+      await page.locator("#open-button").waitFor({ state: "visible" });
+      await dropFile(page, Buffer.concat(chunks), "dup_1.smp");
+      await page.locator("#map").waitFor({ state: "visible", timeout: 30_000 });
+      await waitForLayer(page, "raster");
+      await page.waitForFunction(
+        () => (window as any).maplibreMap?.areTilesLoaded(),
+        null,
+        { timeout: 30_000 },
+      );
+    } finally {
+      page.off("console", onConsole);
+    }
+    expect(warnings).toEqual([]);
   });
 
   test("can pan the map by dragging", async () => {

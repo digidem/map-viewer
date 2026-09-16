@@ -65,8 +65,15 @@ async function openFile(file: File): Promise<OpenedFile> {
   try {
     const kind = await detectFileKind(file);
     if (kind === "smp") {
-      // Reads ranges straight from the File, so unlike MBTiles no OPFS copy is needed
-      const reader = new SmpReader(await ZipReader.from(new BlobSource(file)));
+      // Reads ranges straight from the File, so unlike MBTiles no OPFS copy is needed.
+      // Deduped packages (what this app and map-downloader write) legitimately point
+      // several entries at one local header, which the zip bomb check rejects; the
+      // Reader's own per-resource size limit still applies.
+      const reader = new SmpReader(
+        await ZipReader.from(new BlobSource(file), {
+          skipUniqueEntryCheck: true,
+        }),
+      );
       const style = await reader.getStyle();
       postMessage({
         type: "opened",
