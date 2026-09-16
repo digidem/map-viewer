@@ -160,8 +160,6 @@ async function createSmpStream(
           ],
   };
 
-  console.log(JSON.stringify(style, null, 2));
-
   const writer = new Writer(style, { dedupe: true });
 
   // Pipe tiles asynchronously — writer.outputStream is readable immediately

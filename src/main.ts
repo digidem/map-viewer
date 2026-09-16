@@ -3,11 +3,8 @@ import pDefer, { type DeferredPromise } from "p-defer";
 import { includeKeys } from "filter-obj";
 import createProtocolHandler from "./protocol-handler.ts";
 import { pEvent } from "p-event";
-import {
-  NavigationControl,
-  type IControl,
-  type StyleSpecification,
-} from "maplibre-gl";
+// Type-only: maplibre-gl itself is loaded lazily via import() below, keeping it out of the entry chunk
+import type { IControl, StyleSpecification } from "maplibre-gl";
 import { layerStyles } from "./layer-styles.ts";
 
 // Register service worker for PWA + streaming downloads
@@ -185,6 +182,7 @@ pEvent<"message", MessageEvent<any>>(
   (event) => event.data.type === "metadata"
 ).then(async ({ data: { payload: metadata } }) => {
   const map = await mapPromise;
+  const { NavigationControl } = await import("maplibre-gl");
   map.addControl(
     new NavigationControl({
       showCompass: false,
@@ -246,8 +244,15 @@ const style: StyleSpecification = {
 };
 
 const mapPromise = pEvent(window, "load")
-  .then(() => import("maplibre-gl"))
-  .then(({ default: maplibre }) => {
+  .then(() =>
+    Promise.all([
+      import("maplibre-gl"),
+      import("maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url"),
+    ])
+  )
+  .then(([maplibre, { default: maplibreWorkerUrl }]) => {
+    // maplibre-gl 6 otherwise resolves its worker to a path Vite doesn't emit
+    maplibre.setWorkerUrl(maplibreWorkerUrl);
     maplibre.addProtocol(
       "mbtiles",
       createProtocolHandler(api.getTile.bind(api))

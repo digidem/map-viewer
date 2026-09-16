@@ -10,6 +10,7 @@ import {
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
 const fixturePath = path.resolve("e2e/fixtures/plain_1.mbtiles");
+const vectorFixturePath = path.resolve("e2e/fixtures/vector_1.mbtiles");
 const baseUrl = "http://localhost:4174";
 
 const chromiumArgs =
@@ -18,7 +19,7 @@ const chromiumArgs =
     : ["--use-gl=angle", "--use-angle=swiftshader"];
 
 /** Open an mbtiles file and wait for the map to render */
-async function openMbtilesFile(page: Page) {
+async function openMbtilesFile(page: Page, filePath = fixturePath) {
   await page.goto(baseUrl);
   await page.locator("#open-button").waitFor({ state: "visible" });
 
@@ -26,7 +27,7 @@ async function openMbtilesFile(page: Page) {
     page.waitForEvent("filechooser"),
     page.locator("#open-button").click(),
   ]);
-  await fileChooser.setFiles(fixturePath);
+  await fileChooser.setFiles(filePath);
 
   const map = page.locator("#map");
   await map.waitFor({ state: "visible", timeout: 30_000 });
@@ -139,6 +140,22 @@ function appTests(
     await openMbtilesFile(page);
     const canvas = page.locator("#map canvas");
     expect(await canvas.count()).toBeGreaterThan(0);
+  });
+
+  test("renders vector tiles", async () => {
+    await openMbtilesFile(page, vectorFixturePath);
+    // Vector tiles are parsed in MapLibre's own worker, unlike raster tiles
+    await page.waitForFunction(
+      () => {
+        const map = (window as any).maplibreMap;
+        return (
+          map?.getLayer("shapes-polygons") &&
+          map.queryRenderedFeatures({ layers: ["shapes-polygons"] }).length > 0
+        );
+      },
+      null,
+      { timeout: 30_000 },
+    );
   });
 
   test("can pan the map by dragging", async () => {
