@@ -545,6 +545,20 @@ class SaveControl implements IControl {
     btn.className =
       "maplibregl-ctrl-icon block w-[29px] h-[29px] cursor-pointer border-0 bg-transparent p-0";
     btn.title = "Download as SMP";
+    // Downloads are streamed through the service worker, which doesn't control
+    // the page for the first moments after a first visit
+    if (!navigator.serviceWorker?.controller) {
+      btn.disabled = true;
+      btn.title = "Preparing download…";
+      navigator.serviceWorker?.addEventListener(
+        "controllerchange",
+        () => {
+          btn.disabled = false;
+          btn.title = "Download as SMP";
+        },
+        { once: true },
+      );
+    }
     const downloadIcon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-[19px] h-[19px] m-[5px]"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`;
     const spinnerIcon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="w-[19px] h-[19px] m-[5px] animate-spin"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>`;
     btn.innerHTML = downloadIcon;

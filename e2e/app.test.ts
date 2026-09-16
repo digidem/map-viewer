@@ -60,6 +60,17 @@ async function dropFile(page: Page, bytes: Uint8Array, fileName: string) {
   );
 }
 
+/** Exporting is disabled until the service worker controls the page */
+async function waitForDownloadsReady(page: Page) {
+  await page.waitForFunction(
+    () =>
+      !(document.querySelector("#download-smp") as HTMLButtonElement | null)
+        ?.disabled,
+    null,
+    { timeout: 30_000 },
+  );
+}
+
 async function waitForLayer(page: Page, layerId: string) {
   await page.waitForFunction(
     (id) => Boolean((window as any).maplibreMap?.getLayer(id)),
@@ -176,7 +187,7 @@ function appTests(
     await openMapFile(page, vectorFixturePath);
     const downloadBtn = page.locator("#download-smp");
     await downloadBtn.waitFor({ state: "visible", timeout: 10_000 });
-    await page.evaluate(() => navigator.serviceWorker.ready);
+    await waitForDownloadsReady(page);
 
     const [download] = await Promise.all([
       page.waitForEvent("download", { timeout: 60_000 }),
@@ -198,7 +209,7 @@ function appTests(
     await openMapFile(page, dupFixturePath);
     const downloadBtn = page.locator("#download-smp");
     await downloadBtn.waitFor({ state: "visible", timeout: 10_000 });
-    await page.evaluate(() => navigator.serviceWorker.ready);
+    await waitForDownloadsReady(page);
 
     const [download] = await Promise.all([
       page.waitForEvent("download", { timeout: 60_000 }),
@@ -308,14 +319,7 @@ function appTests(
     const downloadBtn = page.locator("#download-smp");
     await downloadBtn.waitFor({ state: "visible", timeout: 10_000 });
 
-    // Remove showSaveFilePicker so the code uses the service worker streaming
-    // path (which triggers a download via Content-Disposition that Playwright
-    // can capture).
-    await page.evaluate(async () => {
-      delete (window as any).showSaveFilePicker;
-      // Ensure service worker is active before triggering download
-      await navigator.serviceWorker.ready;
-    });
+    await waitForDownloadsReady(page);
 
     const [download] = await Promise.all([
       page.waitForEvent("download", { timeout: 60_000 }),
@@ -337,27 +341,18 @@ function appTests(
     expect(fileContents.length).toBeGreaterThan(100);
   });
 
-  // Downloads are streamed through the service worker; without one the export
-  // reports an error rather than buffering the whole package in memory
-  testDownload("reports an error when the download can't be streamed", async () => {
+  // Downloads are streamed through the service worker; without one exporting
+  // stays unavailable rather than buffering the whole package in memory
+  testDownload("disables export when the download can't be streamed", async () => {
     const context = await browser.newContext({ serviceWorkers: "block" });
     const uncontrolled = await context.newPage();
-    const errors: string[] = [];
-    uncontrolled.on("console", (message) => {
-      if (message.type() === "error") errors.push(message.text());
-    });
     try {
       await openMapFile(uncontrolled);
       const downloadBtn = uncontrolled.locator("#download-smp");
       await downloadBtn.waitFor({ state: "visible", timeout: 10_000 });
-      await downloadBtn.click();
 
-      await uncontrolled.waitForFunction(
-        () => !(document.querySelector("#download-smp") as HTMLButtonElement)?.disabled,
-        null,
-        { timeout: 30_000 },
-      );
-      expect(errors.join("\n")).toContain("SMP download failed");
+      expect(await downloadBtn.isDisabled()).toBe(true);
+      expect(await downloadBtn.getAttribute("title")).toContain("Preparing");
       expect(await uncontrolled.locator("#save-smp").count()).toBe(0);
     } finally {
       await context.close();
