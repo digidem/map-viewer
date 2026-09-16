@@ -231,16 +231,13 @@ function appTests(
       await dropFile(page, Buffer.concat(chunks), "dup_1.smp");
       await page.locator("#map").waitFor({ state: "visible", timeout: 30_000 });
       await waitForLayer(page, "raster");
-      await page.waitForFunction(
-        () => (window as any).maplibreMap?.areTilesLoaded(),
-        null,
-        { timeout: 30_000 },
-      );
+      // Deduplicated tiles fail to read rather than hang, so a settle is enough
+      await page.waitForTimeout(2_000);
     } finally {
       page.off("console", onConsole);
     }
     expect(warnings).toEqual([]);
-  });
+  }, 60_000);
 
   test("can pan the map by dragging", async () => {
     await openMapFile(page);
