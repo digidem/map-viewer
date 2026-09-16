@@ -297,33 +297,28 @@ function appTests(
     expect(fileContents.length).toBeGreaterThan(100);
   });
 
-  // Safari doesn't route the download navigation through the service worker
-  testDownload("offers a save link when the download can't be streamed", async () => {
+  // Downloads are streamed through the service worker; without one the export
+  // reports an error rather than buffering the whole package in memory
+  testDownload("reports an error when the download can't be streamed", async () => {
     const context = await browser.newContext({ serviceWorkers: "block" });
     const uncontrolled = await context.newPage();
+    const errors: string[] = [];
+    uncontrolled.on("console", (message) => {
+      if (message.type() === "error") errors.push(message.text());
+    });
     try {
       await openMapFile(uncontrolled);
       const downloadBtn = uncontrolled.locator("#download-smp");
       await downloadBtn.waitFor({ state: "visible", timeout: 10_000 });
       await downloadBtn.click();
 
-      const saveLink = uncontrolled.locator("#save-smp");
-      await saveLink.waitFor({ state: "visible", timeout: 60_000 });
-      expect(await saveLink.textContent()).toContain("plain_1.smp");
-
-      const [download] = await Promise.all([
-        uncontrolled.waitForEvent("download", { timeout: 30_000 }),
-        saveLink.click(),
-      ]);
-      expect(download.suggestedFilename()).toBe("plain_1.smp");
-
-      const chunks: Buffer[] = [];
-      for await (const chunk of await download.createReadStream()) {
-        chunks.push(Buffer.from(chunk));
-      }
-      const fileContents = Buffer.concat(chunks);
-      expect(fileContents.subarray(0, 2).toString()).toBe("PK");
-      expect(fileContents.length).toBeGreaterThan(100);
+      await uncontrolled.waitForFunction(
+        () => !(document.querySelector("#download-smp") as HTMLButtonElement)?.disabled,
+        null,
+        { timeout: 30_000 },
+      );
+      expect(errors.join("\n")).toContain("SMP download failed");
+      expect(await uncontrolled.locator("#save-smp").count()).toBe(0);
     } finally {
       await context.close();
     }

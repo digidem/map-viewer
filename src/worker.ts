@@ -58,9 +58,6 @@ addEventListener("message", async (event) => {
     case "generateSmp":
       await handleGenerateSmp(event.data.port);
       return;
-    case "generateSmpBlob":
-      await handleGenerateSmpBlob();
-      return;
   }
 });
 
@@ -212,22 +209,6 @@ async function handleGenerateSmp(port: MessagePort) {
   } catch (err) {
     port.postMessage({ type: ABORT, reason: String(err) });
     port.close();
-    postMessage({ type: "smpError", error: String(err) });
-  }
-}
-
-/** Fallback for browsers where the service worker never sees the download
- * navigation: build the whole package in memory and hand it over as a Blob */
-async function handleGenerateSmpBlob() {
-  try {
-    const opened = await openedPromise;
-    if (opened?.kind !== "mbtiles") {
-      throw new Error("Only MBTiles files can be exported to SMP");
-    }
-    const stream = await createSmpStream(opened.mbtiles);
-    const blob = await new Response(stream).blob();
-    postMessage({ type: "smpBlob", blob });
-  } catch (err) {
     postMessage({ type: "smpError", error: String(err) });
   }
 }

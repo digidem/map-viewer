@@ -66,8 +66,16 @@ const DOWNLOAD_TIMEOUT = 30_000;
 const pending = new Map<string, Download>();
 const waiting = new Map<string, (download: Download) => void>();
 
+// Bumped when the download protocol changes, so a page can tell whether the
+// worker answering it is old enough to ignore its download requests
+const DOWNLOAD_PROTOCOL = 2;
+
 self.addEventListener("message", (evt) => {
   const data = evt.data;
+  if (data?.type === "ping") {
+    evt.ports[0]?.postMessage({ downloadProtocol: DOWNLOAD_PROTOCOL });
+    return;
+  }
   if (!data?.url || !data.readablePort) return;
   const rs = new ReadableStream(
     new MessagePortSource(data.readablePort),

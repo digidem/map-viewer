@@ -235,30 +235,6 @@ body {
   color: #1854f6;
 }
 
-/* ── Save link (browsers where the download can't be streamed) ───── */
-.mv-save-ready {
-  position: fixed;
-  left: 50%;
-  bottom: calc(24px + env(safe-area-inset-bottom));
-  transform: translateX(-50%);
-  z-index: 100;
-  max-width: calc(100% - 32px);
-  padding: 14px 22px;
-  background: #1854f6;
-  color: #fff;
-  border-radius: 10px;
-  font-size: 15px;
-  font-weight: 600;
-  text-decoration: none;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
-}
-.mv-save-ready:hover {
-  background: #1447d6;
-}
-
 /* ── Drop overlay ────────────────────────────────────────────────── */
 .drop-overlay {
   position: fixed;

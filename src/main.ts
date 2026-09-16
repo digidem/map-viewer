@@ -21,10 +21,18 @@ type OpenedFile =
 
 // Register service worker for PWA + streaming downloads
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register(
-    import.meta.env.MODE === "production" ? "/sw.js" : "/dev-sw.js?dev-sw",
-    { type: import.meta.env.MODE === "production" ? "classic" : "module" },
-  );
+  navigator.serviceWorker
+    .register(
+      import.meta.env.MODE === "production" ? "/sw.js" : "/dev-sw.js?dev-sw",
+      {
+        type: import.meta.env.MODE === "production" ? "classic" : "module",
+        // Without this a cached sw.js can keep an old worker alive for a day,
+        // and downloads break against a worker that predates them
+        updateViaCache: "none",
+      },
+    )
+    .then((registration) => registration.update())
+    .catch(() => {});
 }
 
 // PWA Install Guidance
@@ -393,21 +401,34 @@ function waitForSmpComplete(): Promise<void> {
   });
 }
 
-/** Wait for the worker to hand over a whole generated package */
-function waitForSmpBlob(): Promise<Blob> {
-  return new Promise((resolve, reject) => {
-    const handler = (event: MessageEvent) => {
-      if (event.data.type === "smpBlob") {
-        worker.removeEventListener("message", handler);
-        resolve(event.data.blob);
-      } else if (event.data.type === "smpError") {
-        worker.removeEventListener("message", handler);
-        reject(new Error(event.data.error));
-      }
+// Kept in step with sw.ts: an older service worker ignores /_download/ requests
+const DOWNLOAD_PROTOCOL = 2;
+
+/** Ask the active service worker which download protocol it speaks (0 = none) */
+function downloadProtocol(registration: ServiceWorkerRegistration) {
+  return new Promise<number>((resolve) => {
+    const sw = registration.active;
+    if (!sw) return resolve(0);
+    const channel = new MessageChannel();
+    const timer = setTimeout(() => resolve(0), 1000);
+    channel.port1.onmessage = (event) => {
+      clearTimeout(timer);
+      resolve(event.data?.downloadProtocol ?? 0);
     };
-    worker.addEventListener("message", handler);
+    sw.postMessage({ type: "ping" }, [channel.port2]);
   });
 }
+
+/** A worker installed before downloads existed silently ignores them, and the
+ * page only finds out when a download fails, so replace it up front */
+async function ensureDownloadWorker() {
+  const registration = await navigator.serviceWorker?.ready;
+  if (!registration) return;
+  if ((await downloadProtocol(registration)) >= DOWNLOAD_PROTOCOL) return;
+  await registration.update().catch(() => {});
+}
+
+void ensureDownloadWorker();
 
 /** Resolves once the service worker reports it received the download request */
 function waitForDownloadStart(url: string, timeout: number): Promise<boolean> {
@@ -427,11 +448,14 @@ function waitForDownloadStart(url: string, timeout: number): Promise<boolean> {
   });
 }
 
-/** Stream the package through the service worker, as a download the browser
- * writes to disk as it arrives. Returns false if the service worker never saw
- * the request, which is the case in Safari. */
-async function streamSmpDownload(fileName: string) {
-  if (!navigator.serviceWorker?.controller) return false;
+/** Stream the package through the service worker, so the browser writes it to
+ * disk as it arrives and nothing is held in memory */
+async function startSmpDownload(fileName: string) {
+  if (!navigator.serviceWorker?.controller) {
+    throw new Error(
+      "Downloads need the service worker — reload the page and try again",
+    );
+  }
 
   const encodedName = encodeURIComponent(fileName)
     .replace(
@@ -449,11 +473,12 @@ async function streamSmpDownload(fileName: string) {
   iframe.src = url;
   document.body.appendChild(iframe);
 
-  // Nothing is generated until the request is known to have arrived, so falling
-  // back costs only this wait
-  if (!(await waitForDownloadStart(url, 3000))) {
+  // Nothing is generated until the request is known to have arrived
+  if (!(await waitForDownloadStart(url, 5000))) {
     iframe.remove();
-    return false;
+    throw new Error(
+      "The service worker did not receive the download request — reload the page and try again",
+    );
   }
 
   const headers = {
@@ -478,34 +503,6 @@ async function streamSmpDownload(fileName: string) {
   } finally {
     iframe.remove();
   }
-  return true;
-}
-
-/** Offer a generated package as a link, so saving it carries its own click */
-function offerSmpFile(blob: Blob, fileName: string) {
-  const objectUrl = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.id = "save-smp";
-  link.className = "mv-save-ready";
-  link.href = objectUrl;
-  link.download = fileName;
-  link.textContent = `Save ${fileName}`;
-  link.addEventListener("click", () => {
-    setTimeout(() => {
-      link.remove();
-      URL.revokeObjectURL(objectUrl);
-    }, 0);
-  });
-  document.body.appendChild(link);
-}
-
-/** Start SMP generation in the worker and get the result to the user */
-async function startSmpDownload(fileName: string) {
-  if (await streamSmpDownload(fileName)) return;
-  // Safari doesn't route the navigation through the service worker, so build the
-  // package in memory instead and let the user save it with a fresh click
-  worker.postMessage({ type: "generateSmpBlob" });
-  offerSmpFile(await waitForSmpBlob(), fileName);
 }
 
 class CloseControl implements IControl {
