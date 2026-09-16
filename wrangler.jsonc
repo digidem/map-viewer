@@ -1,0 +1,13 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "map-viewer",
+  "compatibility_date": "2026-09-15",
+  "routes": [{ "pattern": "map-viewer.comapeo.app", "custom_domain": true }],
+  "workers_dev": false,
+  // Defaults to workers_dev; preview URLs (e.g. from Workers Builds) need it on explicitly.
+  "preview_urls": true,
+  // No SPA fallback: the app has no client-side routes, so missing assets should 404 rather than return index.html
+  "assets": {
+    "directory": "./dist",
+  },
+}
