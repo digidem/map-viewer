@@ -83,15 +83,26 @@ self.addEventListener("message", (evt) => {
   }
 });
 
+// Safari does not always route a navigation through the service worker, and the
+// page can only tell by being told the request arrived
+async function announceDownload(url: string) {
+  const clients = await self.clients.matchAll({ includeUncontrolled: true });
+  for (const client of clients) {
+    client.postMessage({ type: "downloadStarted", url });
+  }
+}
+
 self.addEventListener("fetch", (event) => {
   const url = event.request.url;
   const ready = pending.get(url);
   if (ready) {
     pending.delete(url);
+    event.waitUntil(announceDownload(url));
     event.respondWith(new Response(ready.rs, { headers: ready.headers }));
     return;
   }
   if (!new URL(url).pathname.startsWith(DOWNLOAD_PATH)) return;
+  event.waitUntil(announceDownload(url));
   // The page navigates here synchronously to keep Safari's user activation, and
   // sends the stream just after, so hold the request open until it arrives
   event.respondWith(

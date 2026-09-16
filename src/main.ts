@@ -393,17 +393,45 @@ function waitForSmpComplete(): Promise<void> {
   });
 }
 
-/** Start SMP generation in the worker, streaming result to a download */
-async function startSmpDownload(fileName: string) {
-  // Without a controller nothing would intercept the navigation below, and the
-  // export would stall waiting for a stream no one reads
-  if (!navigator.serviceWorker?.controller) {
-    throw new Error(
-      "Downloads are not ready yet — reload the page and try again",
-    );
-  }
+/** Wait for the worker to hand over a whole generated package */
+function waitForSmpBlob(): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    const handler = (event: MessageEvent) => {
+      if (event.data.type === "smpBlob") {
+        worker.removeEventListener("message", handler);
+        resolve(event.data.blob);
+      } else if (event.data.type === "smpError") {
+        worker.removeEventListener("message", handler);
+        reject(new Error(event.data.error));
+      }
+    };
+    worker.addEventListener("message", handler);
+  });
+}
 
-  const done = waitForSmpComplete();
+/** Resolves once the service worker reports it received the download request */
+function waitForDownloadStart(url: string, timeout: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const finish = (started: boolean) => {
+      clearTimeout(timer);
+      navigator.serviceWorker.removeEventListener("message", onMessage);
+      resolve(started);
+    };
+    const onMessage = (event: MessageEvent) => {
+      if (event.data?.type === "downloadStarted" && event.data.url === url) {
+        finish(true);
+      }
+    };
+    const timer = setTimeout(() => finish(false), timeout);
+    navigator.serviceWorker.addEventListener("message", onMessage);
+  });
+}
+
+/** Stream the package through the service worker, as a download the browser
+ * writes to disk as it arrives. Returns false if the service worker never saw
+ * the request, which is the case in Safari. */
+async function streamSmpDownload(fileName: string) {
+  if (!navigator.serviceWorker?.controller) return false;
 
   const encodedName = encodeURIComponent(fileName)
     .replace(
@@ -421,21 +449,25 @@ async function startSmpDownload(fileName: string) {
   iframe.src = url;
   document.body.appendChild(iframe);
 
+  // Nothing is generated until the request is known to have arrived, so falling
+  // back costs only this wait
+  if (!(await waitForDownloadStart(url, 3000))) {
+    iframe.remove();
+    return false;
+  }
+
   const headers = {
     // Safari ignores filename*, so send a plain ASCII filename as well
     "content-disposition": `attachment; filename="${fileName.replace(/[^\x20-\x7e]/g, "_").replace(/["\\]/g, "_")}"; filename*=UTF-8''${encodedName}`,
     "content-type": "application/octet-stream",
   };
 
+  const done = waitForSmpComplete();
   const channel = new MessageChannel();
   const registration = await navigator.serviceWorker.ready;
-  if (!registration.active) {
-    throw new Error("Service worker not available for download");
-  }
-  registration.active.postMessage({ url, headers, readablePort: channel.port1 }, [
+  registration.active?.postMessage({ url, headers, readablePort: channel.port1 }, [
     channel.port1,
   ]);
-
   worker.postMessage(
     { type: "generateSmp", port: channel.port2 },
     [channel.port2],
@@ -446,6 +478,34 @@ async function startSmpDownload(fileName: string) {
   } finally {
     iframe.remove();
   }
+  return true;
+}
+
+/** Offer a generated package as a link, so saving it carries its own click */
+function offerSmpFile(blob: Blob, fileName: string) {
+  const objectUrl = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.id = "save-smp";
+  link.className = "mv-save-ready";
+  link.href = objectUrl;
+  link.download = fileName;
+  link.textContent = `Save ${fileName}`;
+  link.addEventListener("click", () => {
+    setTimeout(() => {
+      link.remove();
+      URL.revokeObjectURL(objectUrl);
+    }, 0);
+  });
+  document.body.appendChild(link);
+}
+
+/** Start SMP generation in the worker and get the result to the user */
+async function startSmpDownload(fileName: string) {
+  if (await streamSmpDownload(fileName)) return;
+  // Safari doesn't route the navigation through the service worker, so build the
+  // package in memory instead and let the user save it with a fresh click
+  worker.postMessage({ type: "generateSmpBlob" });
+  offerSmpFile(await waitForSmpBlob(), fileName);
 }
 
 class CloseControl implements IControl {

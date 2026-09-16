@@ -296,6 +296,38 @@ function appTests(
     expect(fileContents[1]).toBe(0x4b); // K
     expect(fileContents.length).toBeGreaterThan(100);
   });
+
+  // Safari doesn't route the download navigation through the service worker
+  testDownload("offers a save link when the download can't be streamed", async () => {
+    const context = await browser.newContext({ serviceWorkers: "block" });
+    const uncontrolled = await context.newPage();
+    try {
+      await openMapFile(uncontrolled);
+      const downloadBtn = uncontrolled.locator("#download-smp");
+      await downloadBtn.waitFor({ state: "visible", timeout: 10_000 });
+      await downloadBtn.click();
+
+      const saveLink = uncontrolled.locator("#save-smp");
+      await saveLink.waitFor({ state: "visible", timeout: 60_000 });
+      expect(await saveLink.textContent()).toContain("plain_1.smp");
+
+      const [download] = await Promise.all([
+        uncontrolled.waitForEvent("download", { timeout: 30_000 }),
+        saveLink.click(),
+      ]);
+      expect(download.suggestedFilename()).toBe("plain_1.smp");
+
+      const chunks: Buffer[] = [];
+      for await (const chunk of await download.createReadStream()) {
+        chunks.push(Buffer.from(chunk));
+      }
+      const fileContents = Buffer.concat(chunks);
+      expect(fileContents.subarray(0, 2).toString()).toBe("PK");
+      expect(fileContents.length).toBeGreaterThan(100);
+    } finally {
+      await context.close();
+    }
+  });
 }
 
 describe("chromium", () => {
