@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "deploy": "npm run build && wrangler deploy",
     "test": "vite build && vitest run",
-    "test:e2e:install": "npx playwright install chromium firefox"
+    "test:e2e:install": "npx playwright install chromium firefox webkit"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",

@@ -31,15 +31,17 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-${{ steps.playwright-version.outputs.PLAYWRIGHT_VERSION }}
+          # Browsers are part of the key: a cache from before webkit was added holds chromium only
+          key: playwright-chromium-webkit-${{ steps.playwright-version.outputs.PLAYWRIGHT_VERSION }}
 
-      - name: Install Playwright Chromium
+      - name: Install Playwright browsers
         if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps chromium webkit
 
+      # OS dependencies live outside the cached browser directory
       - name: Install Playwright dependencies
         if: steps.playwright-cache.outputs.cache-hit == 'true'
-        run: npx playwright install-deps chromium
+        run: npx playwright install-deps chromium webkit && npx playwright install chromium webkit
 
       - name: Build
         run: npx vite build

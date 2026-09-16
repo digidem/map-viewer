@@ -3,7 +3,10 @@
 import { ZipReader } from "@gmaclennan/zip-reader";
 import { BlobSource } from "@gmaclennan/zip-reader/blob-source";
 import { MBTiles } from "mbtiles-reader";
-import type { Reader as SmpReader } from "styled-map-package-api/reader";
+// Static, not import(): Safari evaluates this worker's module graph a second time
+// for a dynamic import, giving a second copy of module state that has no file open
+import { Reader as SmpReader } from "styled-map-package-api/reader";
+import { Writer } from "styled-map-package-api/writer";
 import { layerStyles } from "./layer-styles.ts";
 
 const SMP_URI_BASE = "smp://maps.v1/";
@@ -15,17 +18,25 @@ type OpenedFile =
 // Only ever holds a successfully opened file, so a failed or superseded open can't break tile serving
 let openedPromise: Promise<OpenedFile> | undefined;
 
-// Request access to the OPFS
-const rootPromise = navigator.storage.getDirectory().then(async (root) => {
-  // Cleanup on startup, in case last run did not clean up. Files still open in
-  // another tab are locked, so removing them fails harmlessly.
-  for await (const [name] of (root as any).entries() as AsyncIterable<
-    [string, FileSystemHandle]
-  >) {
-    if (name.endsWith(".mbtiles")) await root.removeEntry(name).catch(() => {});
-  }
-  return root;
-});
+let rootPromise: Promise<FileSystemDirectoryHandle> | undefined;
+
+// Lazy: only MBTiles need the OPFS, and requesting it eagerly fails in Safari
+// contexts where it is unavailable, which would break SMP files too
+function getOpfsRoot() {
+  rootPromise ??= navigator.storage.getDirectory().then(async (root) => {
+    // Cleanup on first use, in case a previous run did not clean up. Files still
+    // open in another tab are locked, so removing them fails harmlessly.
+    for await (const [name] of (root as any).entries() as AsyncIterable<
+      [string, FileSystemHandle]
+    >) {
+      if (name.endsWith(".mbtiles")) {
+        await root.removeEntry(name).catch(() => {});
+      }
+    }
+    return root;
+  });
+  return rootPromise;
+}
 
 addEventListener("message", async (event) => {
   switch (event.data.type) {
@@ -54,9 +65,8 @@ async function openFile(file: File): Promise<OpenedFile> {
   try {
     const kind = await detectFileKind(file);
     if (kind === "smp") {
-      const { Reader } = await import("styled-map-package-api/reader");
       // Reads ranges straight from the File, so unlike MBTiles no OPFS copy is needed
-      const reader = new Reader(await ZipReader.from(new BlobSource(file)));
+      const reader = new SmpReader(await ZipReader.from(new BlobSource(file)));
       const style = await reader.getStyle();
       postMessage({
         type: "opened",
@@ -72,7 +82,7 @@ async function openFile(file: File): Promise<OpenedFile> {
     try {
       mbtiles = await MBTiles.open(opfsName);
     } catch (err) {
-      (await rootPromise).removeEntry(opfsName).catch(() => {});
+      (await getOpfsRoot()).removeEntry(opfsName).catch(() => {});
       throw err;
     }
     postMessage({
@@ -159,7 +169,7 @@ function safeDecodeURIComponent(value: string): string {
 async function closeFile(file: OpenedFile) {
   if (file.kind === "smp") return file.reader.close();
   file.mbtiles.close();
-  await (await rootPromise).removeEntry(file.opfsName).catch(() => {});
+  await (await getOpfsRoot()).removeEntry(file.opfsName).catch(() => {});
 }
 
 async function gunzipIfNeeded(data: Uint8Array): Promise<ArrayBuffer> {
@@ -260,8 +270,6 @@ const SOURCE_ID = "mbtiles-source";
 async function createSmpStream(
   reader: MBTiles,
 ): Promise<ReadableStream<Uint8Array>> {
-  const { Writer } = await import("styled-map-package-api/writer");
-
   const metadata = reader.metadata;
   const isVector = metadata.format === "pbf";
   const background = {
@@ -333,7 +341,7 @@ async function createSmpStream(
 }
 
 async function copyFileToOpfs(file: File, name: string) {
-  const root = await rootPromise;
+  const root = await getOpfsRoot();
 
   const opfsFileHandle = await root.getFileHandle(name, {
     create: true,

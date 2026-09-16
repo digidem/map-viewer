@@ -283,6 +283,10 @@ function showMbtiles(map: MaplibreMap, metadata: Record<string, any>) {
   map.fitBounds(metadata.bounds, { duration: 0 });
 }
 
+function coversWorld([w, s, e, n]: [number, number, number, number]) {
+  return w <= -179 && e >= 179 && s <= -84 && n >= 84;
+}
+
 function showSmp(map: MaplibreMap, smpStyle: StyleSpecification) {
   let styleLoaded = false;
   // MapLibre skips style.load (and so never reveals the map) if it rejects the style
@@ -295,7 +299,9 @@ function showSmp(map: MaplibreMap, smpStyle: StyleSpecification) {
     const bounds: [number, number, number, number] | undefined = (
       smpStyle.metadata as any
     )?.["smp:bounds"];
-    if (!bounds) {
+    // A worldwide package has nothing useful to outline, and fitting it zooms
+    // out past the style's own view
+    if (!bounds || coversWorld(bounds)) {
       map.jumpTo({ center: smpStyle.center, zoom: smpStyle.zoom });
       return;
     }
