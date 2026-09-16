@@ -58,7 +58,7 @@ npm run generate-pwa-assets
 
 ## Deployment
 
-The app is deployed to [map-view.comapeo.app](https://map-view.comapeo.app) as a
+The app is deployed to [map-viewer.comapeo.app](https://map-viewer.comapeo.app) as a
 Cloudflare Worker with static assets (see `wrangler.jsonc`):
 
 ```bash
