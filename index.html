@@ -18,13 +18,13 @@
   >
     <!-- Header -->
     <h1 class="text-4xl font-bold text-teal-700">MBTiles Viewer</h1>
-    <p class="text-lg text-gray-700 mt-2">View MBTiles files in the browser</p>
+    <p class="text-lg text-gray-700 mt-2">View MBTiles and SMP files in the browser</p>
     <input
       id="file-input"
       type="file"
       disabled
       class="hidden"
-      accept=".db,.mbtiles,.sqlite,.sqlite3"
+      accept=".db,.mbtiles,.sqlite,.sqlite3,.smp"
     />
     <!-- Button -->
     <button
@@ -32,8 +32,10 @@
       class="mt-8 px-6 h-12 bg-blue-500 text-white font-semibold text-lg rounded-lg shadow-md hover:bg-blue-600 hover:shadow-lg transition-all duration-200 ease-in-out cursor-pointer hidden"
       disabled
     >
-      Open MBTiles
+      Open map file
     </button>
+
+    <p id="open-error" role="alert" class="hidden mt-4 max-w-sm text-center text-sm text-red-700"></p>
 
     <!-- Drop hint text -->
     <p id="drop-hint" class="mt-4 text-sm text-gray-500 hidden">
@@ -52,7 +54,7 @@
         <path stroke-linecap="round" stroke-linejoin="round" d="M12 16V4m0 0l-4 4m4-4l4 4M4 20h16" transform="rotate(180 12 12)" />
       </svg>
       <p class="text-2xl font-semibold text-blue-600">Drop file to open</p>
-      <p class="text-sm text-gray-500 mt-1">.mbtiles, .sqlite, .db</p>
+      <p class="text-sm text-gray-500 mt-1">.mbtiles, .smp, .sqlite, .db</p>
     </div>
 
     <div id="spinner" class="mt-8 h-12">

@@ -1,49 +1,184 @@
 /// <reference lib="webworker" />
 
+import { ZipReader } from "@gmaclennan/zip-reader";
+import { BlobSource } from "@gmaclennan/zip-reader/blob-source";
 import { MBTiles } from "mbtiles-reader";
-import { pEvent } from "p-event";
+import type { Reader as SmpReader } from "styled-map-package-api/reader";
+import { layerStyles } from "./layer-styles.ts";
 
-const MBTILES_FILENAME = "tiles.mbtiles";
-let mbtiles: MBTiles | undefined;
+const SMP_URI_BASE = "smp://maps.v1/";
+
+type OpenedFile =
+  | { kind: "mbtiles"; mbtiles: MBTiles; opfsName: string }
+  | { kind: "smp"; reader: SmpReader };
+
+// Only ever holds a successfully opened file, so a failed or superseded open can't break tile serving
+let openedPromise: Promise<OpenedFile> | undefined;
 
 // Request access to the OPFS
 const rootPromise = navigator.storage.getDirectory().then(async (root) => {
-  // Cleanup on startup, in case last run did not clean up.
-  await root.removeEntry(MBTILES_FILENAME).catch(() => {});
+  // Cleanup on startup, in case last run did not clean up. Files still open in
+  // another tab are locked, so removing them fails harmlessly.
+  for await (const [name] of (root as any).entries() as AsyncIterable<
+    [string, FileSystemHandle]
+  >) {
+    if (name.endsWith(".mbtiles")) await root.removeEntry(name).catch(() => {});
+  }
   return root;
-});
-
-const mbtilesPromise = pEvent<string, MessageEvent<any>>(
-  self,
-  "message",
-  (event) => event.data.type === "file",
-).then(async ({ data }) => {
-  const file = data.payload as File;
-  await copyFileToOpfs(file, MBTILES_FILENAME);
-  const instance = await MBTiles.open(MBTILES_FILENAME);
-
-  postMessage({
-    type: "metadata",
-    payload: { ...instance.metadata, fileName: file.name },
-  });
-
-  return instance;
 });
 
 addEventListener("message", async (event) => {
   switch (event.data.type) {
-    case "beforeunload":
-      mbtiles?.close();
-      (await rootPromise).removeEntry(MBTILES_FILENAME).catch(() => {});
+    case "file":
+      openFile(event.data.payload).then((next) => {
+        const previous = openedPromise;
+        openedPromise = Promise.resolve(next);
+        previous?.then(closeFile);
+      }, () => {});
       return;
-    case "tileRequest":
-      await handleTileRequest(event.data);
+    case "beforeunload": {
+      const opened = await openedPromise;
+      if (opened) await closeFile(opened);
+      return;
+    }
+    case "resourceRequest":
+      await handleResourceRequest(event.data);
       return;
     case "generateSmp":
       await handleGenerateSmp(event.data.port);
       return;
   }
 });
+
+async function openFile(file: File): Promise<OpenedFile> {
+  try {
+    const kind = await detectFileKind(file);
+    if (kind === "smp") {
+      const { Reader } = await import("styled-map-package-api/reader");
+      // Reads ranges straight from the File, so unlike MBTiles no OPFS copy is needed
+      const reader = new Reader(await ZipReader.from(new BlobSource(file)));
+      const style = await reader.getStyle();
+      postMessage({
+        type: "opened",
+        payload: { kind, fileName: file.name, style },
+      });
+      return { kind, reader };
+    }
+    // A unique name per open: mbtiles-reader doesn't close the database when
+    // validation fails, which would otherwise leave a fixed filename locked
+    const opfsName = `tiles-${crypto.randomUUID()}.mbtiles`;
+    await copyFileToOpfs(file, opfsName);
+    let mbtiles: MBTiles;
+    try {
+      mbtiles = await MBTiles.open(opfsName);
+    } catch (err) {
+      (await rootPromise).removeEntry(opfsName).catch(() => {});
+      throw err;
+    }
+    postMessage({
+      type: "opened",
+      payload: { kind, fileName: file.name, metadata: mbtiles.metadata },
+    });
+    return { kind, mbtiles, opfsName };
+  } catch (err) {
+    postMessage({ type: "openError", error: errorMessage(err) });
+    throw err;
+  }
+}
+
+async function detectFileKind(file: File): Promise<OpenedFile["kind"]> {
+  const header = new Uint8Array(await file.slice(0, 16).arrayBuffer());
+  if (
+    header[0] === 0x50 &&
+    header[1] === 0x4b &&
+    header[2] === 0x03 &&
+    header[3] === 0x04
+  ) {
+    return "smp";
+  }
+  if (new TextDecoder().decode(header) === "SQLite format 3\0") {
+    return "mbtiles";
+  }
+  throw new Error(
+    `${file.name} is not an MBTiles or Styled Map Package (.smp) file`,
+  );
+}
+
+async function handleResourceRequest({
+  payload: { url },
+  id,
+}: {
+  payload: { url: string };
+  id: number;
+}) {
+  if (typeof url !== "string" || typeof id !== "number") {
+    throw new TypeError("Invalid Message");
+  }
+  try {
+    const opened = await openedPromise;
+    if (!opened) throw new Error("No file opened");
+    const data =
+      opened.kind === "smp"
+        ? await getSmpResource(opened.reader, url)
+        : getMbtilesTile(opened.mbtiles, url);
+    const payload = await gunzipIfNeeded(data);
+    postMessage({ id, payload }, { transfer: [payload] });
+  } catch (err) {
+    postMessage({ id, error: errorMessage(err) });
+  }
+}
+
+function getMbtilesTile(mbtiles: MBTiles, url: string): Uint8Array {
+  const match = url.match(/(\d+)\/(\d+)\/(\d+)$/);
+  if (!match) throw new Error(`Invalid tile URL: ${url}`);
+  const [z, x, y] = match.slice(1).map(Number);
+  return mbtiles.getTile({ z, x, y }).data;
+}
+
+async function getSmpResource(
+  reader: SmpReader,
+  url: string,
+): Promise<Uint8Array> {
+  if (!url.startsWith(SMP_URI_BASE)) {
+    throw new Error(`Invalid SMP URL: ${url}`);
+  }
+  const path = safeDecodeURIComponent(url.slice(SMP_URI_BASE.length));
+  const { stream } = await reader.getResource(path);
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+// Zip entry names are raw; decode in case a URL was percent-encoded, but a literal "%" in a name must not throw
+function safeDecodeURIComponent(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+async function closeFile(file: OpenedFile) {
+  if (file.kind === "smp") return file.reader.close();
+  file.mbtiles.close();
+  await (await rootPromise).removeEntry(file.opfsName).catch(() => {});
+}
+
+async function gunzipIfNeeded(data: Uint8Array): Promise<ArrayBuffer> {
+  const isGzipped = data[0] === 0x1f && data[1] === 0x8b;
+  if (!isGzipped) {
+    return data.buffer.slice(
+      data.byteOffset,
+      data.byteOffset + data.byteLength,
+    ) as ArrayBuffer;
+  }
+  const decompressed = new Response(data as BodyInit).body!.pipeThrough(
+    new DecompressionStream("gzip"),
+  );
+  return new Response(decompressed).arrayBuffer();
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
 
 const WRITE = 0;
 const PULL = 0;
@@ -53,8 +188,11 @@ const CLOSE = 2;
 
 async function handleGenerateSmp(port: MessagePort) {
   try {
-    mbtiles = mbtiles ?? (await mbtilesPromise);
-    const stream = await createSmpStream(mbtiles);
+    const opened = await openedPromise;
+    if (opened?.kind !== "mbtiles") {
+      throw new Error("Only MBTiles files can be exported to SMP");
+    }
+    const stream = await createSmpStream(opened.mbtiles);
     const writable = new WritableStream(new MessagePortSink(port));
     await stream.pipeTo(writable);
     postMessage({ type: "smpComplete" });
@@ -125,6 +263,12 @@ async function createSmpStream(
   const { Writer } = await import("styled-map-package-api/writer");
 
   const metadata = reader.metadata;
+  const isVector = metadata.format === "pbf";
+  const background = {
+    id: "background",
+    type: "background",
+    paint: { "background-color": "white" },
+  };
 
   const style = {
     version: 8,
@@ -132,32 +276,29 @@ async function createSmpStream(
     sources: {
       [SOURCE_ID]: {
         ...metadata,
-        type: metadata.format === "pbf" ? "vector" : "raster",
-        tileSize: metadata.format === "pbf" ? 512 : 256,
+        type: isVector ? "vector" : "raster",
+        tileSize: isVector ? 512 : 256,
       },
     },
-    layers:
-      metadata.format === "pbf"
-        ? [
-            {
-              id: "background",
-              type: "background",
-              paint: { "background-color": "white" },
-            },
-          ]
-        : [
-            {
-              id: "background",
-              type: "background",
-              paint: { "background-color": "white" },
-            },
-            {
-              id: "raster",
-              type: "raster",
-              source: SOURCE_ID,
-              paint: { "raster-opacity": 1 },
-            },
-          ],
+    layers: isVector
+      ? [
+          background,
+          // mbtiles-reader spreads the `json` metadata row in, but its type omits it
+          ...layerStyles(
+            (metadata as { vector_layers?: { id: string }[] }).vector_layers ||
+              [],
+            SOURCE_ID,
+          ),
+        ]
+      : [
+          background,
+          {
+            id: "raster",
+            type: "raster",
+            source: SOURCE_ID,
+            paint: { "raster-opacity": 1 },
+          },
+        ],
   };
 
   const writer = new Writer(style, { dedupe: true });
@@ -189,46 +330,6 @@ async function createSmpStream(
   })();
 
   return writer.outputStream;
-}
-
-async function handleTileRequest({
-  payload: { z, x, y },
-  id,
-}: {
-  payload: { z: number; x: number; y: number };
-  id: number;
-}) {
-  if (
-    typeof z !== "number" ||
-    typeof x !== "number" ||
-    typeof y !== "number" ||
-    typeof id !== "number"
-  ) {
-    throw new TypeError("Invalid Message");
-  }
-  mbtiles = mbtiles ?? (await mbtilesPromise);
-
-  try {
-    const tile = mbtiles.getTile({ z, x, y });
-    const isGzipped = tile.data[0] === 0x1f && tile.data[1] === 0x8b;
-    const payload = isGzipped
-      ? await gunzip(tile.data.buffer as ArrayBuffer)
-      : (tile.data.buffer as ArrayBuffer);
-
-    postMessage({ id, payload }, { transfer: [payload] });
-  } catch {
-    postMessage({ id, error: "Tile not found" });
-  }
-}
-
-async function gunzip(inputBuffer: ArrayBuffer): Promise<ArrayBuffer> {
-  const decompressionStream = new DecompressionStream("gzip");
-  const inputStream = new Response(inputBuffer)
-    .body as ReadableStream<Uint8Array>;
-  const decompressedStream = inputStream.pipeThrough(
-    decompressionStream as any,
-  );
-  return new Response(decompressedStream).arrayBuffer();
 }
 
 async function copyFileToOpfs(file: File, name: string) {

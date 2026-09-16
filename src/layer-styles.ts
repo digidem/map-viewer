@@ -20,7 +20,8 @@ function randomColor(colors: string[]) {
 }
 
 export function* layerStyles(
-  vectorLayers: { id: string }[]
+  vectorLayers: { id: string }[],
+  sourceId: string,
 ): Iterable<LayerSpecification> {
   for (const layer of vectorLayers) {
     var layerColor = "#" + randomColor(lightColors);
@@ -28,7 +29,7 @@ export function* layerStyles(
     yield {
       id: `${layer.id}-polygons`,
       type: "fill",
-      source: "mbtiles",
+      source: sourceId,
       "source-layer": `${layer.id}`,
       filter: ["==", "$type", "Polygon"],
       layout: {},
@@ -41,7 +42,7 @@ export function* layerStyles(
     yield {
       id: `${layer.id}-polygons-outline`,
       type: "line",
-      source: "mbtiles",
+      source: sourceId,
       "source-layer": `${layer.id}`,
       filter: ["==", "$type", "Polygon"],
       layout: {
@@ -58,7 +59,7 @@ export function* layerStyles(
     yield {
       id: `${layer.id}-lines`,
       type: "line",
-      source: "mbtiles",
+      source: sourceId,
       "source-layer": `${layer.id}`,
       filter: ["==", "$type", "LineString"],
       layout: {
@@ -75,7 +76,7 @@ export function* layerStyles(
     yield {
       id: `${layer.id}-pts`,
       type: "circle",
-      source: "mbtiles",
+      source: sourceId,
       "source-layer": `${layer.id}`,
       filter: ["==", "$type", "Point"],
       paint: {

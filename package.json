@@ -25,6 +25,7 @@
     "wrangler": "^4.131.2"
   },
   "dependencies": {
+    "@gmaclennan/zip-reader": "^1.0.0",
     "filter-obj": "^6.1.0",
     "maplibre-gl": "^6.9.1",
     "mbtiles-reader": "^2.0.2",
