@@ -395,59 +395,57 @@ function waitForSmpComplete(): Promise<void> {
 
 /** Start SMP generation in the worker, streaming result to a download */
 async function startSmpDownload(fileName: string) {
-  const done = waitForSmpComplete();
-
-  const sw = await navigator.serviceWorker?.getRegistration();
-  if (!sw?.active) {
-    throw new Error("Service worker not available for download");
+  // Without a controller nothing would intercept the navigation below, and the
+  // export would stall waiting for a stream no one reads
+  if (!navigator.serviceWorker?.controller) {
+    throw new Error(
+      "Downloads are not ready yet — reload the page and try again",
+    );
   }
 
-  const channel = new MessageChannel();
+  const done = waitForSmpComplete();
+
   const encodedName = encodeURIComponent(fileName)
     .replace(
       /['()]/g,
       (c) => "%" + c.charCodeAt(0).toString(16).toUpperCase(),
     )
     .replace(/\*/g, "%2A");
+  const url = `${location.origin}/_download/${crypto.randomUUID()}/${encodedName}`;
+
+  // Navigate first and synchronously: Safari only starts a download while the
+  // click's user activation is live. The service worker holds the request open
+  // until the stream below reaches it.
+  const iframe = document.createElement("iframe");
+  iframe.hidden = true;
+  iframe.src = url;
+  document.body.appendChild(iframe);
 
   const headers = {
-    "content-disposition": "attachment; filename*=UTF-8''" + encodedName,
+    // Safari ignores filename*, so send a plain ASCII filename as well
+    "content-disposition": `attachment; filename="${fileName.replace(/[^\x20-\x7e]/g, "_").replace(/["\\]/g, "_")}"; filename*=UTF-8''${encodedName}`,
     "content-type": "application/octet-stream",
   };
 
-  // If the iframe navigates before the SW has stored the stream (e.g. while the
-  // SW is restarting), the fetch misses it and the download silently never starts
-  const swReady = new MessageChannel();
-  // A service worker from before this handshake existed never acks, so don't wait forever
-  const swAcked = Promise.race([
-    new Promise((resolve) => {
-      swReady.port1.onmessage = resolve;
-    }),
-    new Promise((resolve) => setTimeout(resolve, 2000)),
+  const channel = new MessageChannel();
+  const registration = await navigator.serviceWorker.ready;
+  if (!registration.active) {
+    throw new Error("Service worker not available for download");
+  }
+  registration.active.postMessage({ url, headers, readablePort: channel.port1 }, [
+    channel.port1,
   ]);
-  sw.active.postMessage(
-    {
-      url: sw.scope + encodedName,
-      headers,
-      readablePort: channel.port1,
-      ackPort: swReady.port2,
-    },
-    [channel.port1, swReady.port2],
-  );
-  await swAcked;
-  swReady.port1.close();
 
   worker.postMessage(
     { type: "generateSmp", port: channel.port2 },
     [channel.port2],
   );
 
-  const iframe = document.createElement("iframe");
-  iframe.hidden = true;
-  iframe.src = sw.scope + encodedName;
-  document.body.appendChild(iframe);
-
-  await done;
+  try {
+    await done;
+  } finally {
+    iframe.remove();
+  }
 }
 
 class CloseControl implements IControl {
