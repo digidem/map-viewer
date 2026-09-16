@@ -1,4 +1,7 @@
 import "maplibre-gl/dist/maplibre-gl.css";
+import "@fontsource/hanken-grotesk/latin-400.css";
+import "@fontsource/hanken-grotesk/latin-600.css";
+import "@fontsource/hanken-grotesk/latin-700.css";
 import pDefer, { type DeferredPromise } from "p-defer";
 import { includeKeys } from "filter-obj";
 import createProtocolHandler from "./protocol-handler.ts";
@@ -239,8 +242,15 @@ pEvent<"message", MessageEvent<any>>(
     showMbtiles(map, payload.metadata);
   }
   map.on("sourcedata", () => {
+    if (mapVisible) return;
     map.getContainer().classList.remove("hidden");
     mapVisible = true;
+    // The map covers the landing page, but its buttons would still be reachable by keyboard
+    for (const el of document.querySelectorAll<HTMLElement>(
+      ".mv-landing, #install-guide"
+    )) {
+      el.inert = true;
+    }
   });
 });
 
@@ -447,7 +457,7 @@ class CloseControl implements IControl {
     const button = document.createElement("button");
     button.className = "maplibregl-ctrl-icon";
     button.title = "Close";
-    button.textContent = "✖️";
+    button.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="w-[17px] h-[17px] m-[6px]"><path d="M18 6 6 18M6 6l12 12"/></svg>`;
     button.onclick = this.#onClick;
     this.#container.appendChild(button);
     return this.#container;

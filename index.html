@@ -1,108 +1,89 @@
 <!DOCTYPE html>
-<html lang="en" class="h-full">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/apple-touch-icon-180x180.png" />
-    <meta name="theme-color" content="#eef2ff" />
+    <!-- No theme-color, matching map-downloader: iOS Safari then keeps its frosted-glass chrome over the map. -->
     <link rel="stylesheet" href="/src/style.css" />
     <meta
       name="viewport"
       content="width=device-width, initial-scale=1.0, viewport-fit=cover, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no"
     />
-    <title>MBTiles Viewer</title>
-  </head>
-  <body
-    class="bg-indigo-50 flex flex-col items-center justify-center h-dvh overscroll-none overflow-hidden"
-  >
-    <!-- Header -->
-    <h1 class="text-4xl font-bold text-teal-700">MBTiles Viewer</h1>
-    <p class="text-lg text-gray-700 mt-2">View MBTiles and SMP files in the browser</p>
-    <input
-      id="file-input"
-      type="file"
-      disabled
-      class="hidden"
-      accept=".db,.mbtiles,.sqlite,.sqlite3,.smp"
+    <meta
+      name="description"
+      content="View MBTiles and Styled Map Package (.smp) files in your browser, offline."
     />
-    <!-- Button -->
-    <button
-      id="open-button"
-      class="mt-8 px-6 h-12 bg-blue-500 text-white font-semibold text-lg rounded-lg shadow-md hover:bg-blue-600 hover:shadow-lg transition-all duration-200 ease-in-out cursor-pointer hidden"
-      disabled
-    >
-      Open map file
-    </button>
+    <title>Map Viewer</title>
+  </head>
+  <body>
+    <div id="app">
+      <div id="map" class="map-host hidden"></div>
 
-    <p id="open-error" role="alert" class="hidden mt-4 max-w-sm text-center text-sm text-red-700"></p>
+      <header class="va-brand">
+        <img class="va-brand-mark" src="/logo.svg" alt="" />
+        Map Viewer
+      </header>
 
-    <!-- Drop hint text -->
-    <p id="drop-hint" class="mt-4 text-sm text-gray-500 hidden">
-      <svg class="inline-block w-5 h-5 mr-1 -mt-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M12 16V4m0 0l-4 4m4-4l4 4M4 20h16" transform="rotate(180 12 12)" />
-      </svg>
-      or drag &amp; drop a file here
-    </p>
+      <main class="mv-landing">
+        <section class="mv-card">
+          <h1 class="mv-title">Open a map</h1>
+          <p class="mv-sub">
+            View MBTiles and Styled Map Package files. Your file stays on this
+            device, and the viewer works offline.
+          </p>
 
-    <!-- Drop overlay -->
-    <div
-      id="drop-overlay"
-      class="hidden fixed inset-0 z-50 bg-indigo-100/80 flex flex-col items-center justify-center pointer-events-none transition-opacity duration-150"
-    >
-      <svg class="w-16 h-16 text-blue-500 mb-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M12 16V4m0 0l-4 4m4-4l4 4M4 20h16" transform="rotate(180 12 12)" />
-      </svg>
-      <p class="text-2xl font-semibold text-blue-600">Drop file to open</p>
-      <p class="text-sm text-gray-500 mt-1">.mbtiles, .smp, .sqlite, .db</p>
-    </div>
+          <input
+            id="file-input"
+            type="file"
+            disabled
+            class="hidden"
+            accept=".db,.mbtiles,.sqlite,.sqlite3,.smp"
+          />
 
-    <div id="spinner" class="mt-8 h-12">
-      <svg
-        class="animate-spin h-8 w-8 text-blue-500"
-        xmlns="http://www.w3.org/2000/svg"
-        fill="none"
-        viewBox="0 0 24 24"
-      >
-        <circle
-          class="opacity-25"
-          cx="12"
-          cy="12"
-          r="10"
-          stroke="currentColor"
-          stroke-width="4"
-        ></circle>
-        <path
-          class="opacity-75"
-          fill="currentColor"
-          d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
-        ></path>
-      </svg>
-    </div>
-    <!-- PWA Install Guidance (hidden by default, shown via JS) -->
-    <div id="install-guide" class="hidden absolute bottom-0 pb-6 max-w-xs text-center">
-      <!-- Chromium install button (shown when beforeinstallprompt fires) -->
-      <button
-        id="install-button"
-        class="hidden px-5 py-2.5 bg-teal-600 text-white font-medium rounded-lg shadow-md hover:bg-teal-700 transition-colors duration-200 cursor-pointer"
-      >
-        Install App
-      </button>
-      <!-- iOS instructions (shown on iOS Safari) -->
-      <div id="install-ios" class="hidden text-sm text-gray-600 leading-relaxed">
-        <p>
+          <div class="mv-drop">
+            <button id="open-button" class="mv-primary hidden" disabled>
+              Open map file
+            </button>
+            <div id="spinner" class="mv-spinner" role="status" aria-label="Opening file">
+              <svg class="mv-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+                <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+              </svg>
+            </div>
+            <p id="drop-hint" class="mv-drop-hint hidden">or drag &amp; drop a file here</p>
+            <p class="mv-drop-formats">.mbtiles &nbsp;·&nbsp; .smp</p>
+          </div>
+
+          <p id="open-error" role="alert" class="mv-error hidden"></p>
+        </section>
+      </main>
+
+      <!-- PWA install guidance (shown via JS) -->
+      <div id="install-guide" class="mv-install hidden">
+        <button id="install-button" class="mv-install-btn hidden">
+          Install app for offline use
+        </button>
+        <p id="install-ios" class="hidden">
           To install, tap
-          <svg class="inline-block w-5 h-5 align-text-bottom" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8"/>
-            <polyline points="16 6 12 2 8 6"/>
-            <line x1="12" y1="2" x2="12" y2="15"/>
+          <svg class="mv-inline-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8" />
+            <polyline points="16 6 12 2 8 6" />
+            <line x1="12" y1="2" x2="12" y2="15" />
           </svg>
-          then <strong>"Add to Home Screen"</strong>
+          then <strong>Add to Home Screen</strong>
         </p>
       </div>
     </div>
 
-    <div id="map" class="h-full hidden absolute! w-full top-0 bg-white"></div>
+    <div id="drop-overlay" class="drop-overlay hidden">
+      <svg class="drop-overlay-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 16V4m0 0l-4 4m4-4l4 4M4 20h16" transform="rotate(180 12 12)" />
+      </svg>
+      <p class="drop-overlay-title">Drop file to open</p>
+      <p class="drop-overlay-sub">.mbtiles &nbsp;·&nbsp; .smp</p>
+    </div>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
